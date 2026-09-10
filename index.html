@@ -1,0 +1,167 @@
+﻿<!-- Quiz v18.3 -->
+<!-- Developed by GOWTHAMAN B @ 02/09/2025 -->
+<!-- All Rights Reserved -->
+	
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DRB/SRB Quiz</title>
+    <script src="./asset/xlsx-18.5.full.min.js"></script>
+    <link rel="stylesheet" href="./asset/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="./asset/quiz.css">
+    
+
+</head>
+<body>
+    <div class="container">
+        
+		<!-- app title -->
+		<h1 class="tamil-font">DRB/SRB Quiz</h1>
+        
+		<!-- user -->
+        <div class="user-container tamil-font" id="user-container">
+            <div class="welcome-message" id="welcome-message">வணக்கம்! உங்கள் பெயரை உள்ளிடவும்</div>
+			
+			<!-- login -->   
+            <div id="login-section">
+                <div class="login-form">
+                    <input type="text" id="user-name" class="user-input" placeholder="உங்கள் பெயர்">
+                    <button id="login-btn" class="login-btn">உள்நுழை</button>
+                </div>
+            </div>
+            
+			<!-- overall score & logout -->
+            <div id="user-info-section" class="hidden">
+                <div class="user-info">
+                    <div class="score-display" id="score-display">
+                        <i class="fas fa-trophy"></i> சராசரி: <span id="average-score">0</span>%
+                    </div>
+                    <button id="logout-btn" class="logout-btn"><i class="fas fa-power-off"></i></button>
+                </div>
+            </div>          
+           
+        </div>
+        
+		<!-- main score board -->
+		<div class="main-score-board" id="main-score-board">
+		   <div class="score-board-title">மதிப்பெண் பலகை</div>
+		   <div id="score-details"></div>
+		</div>
+        
+		<!-- discription -->
+        <div class="description tamil-font hidden" id="description">
+            <p>உங்கள் அறிவை வினாடி வினாவில் சோதிக்கவும்.</p>
+			<p>கேள்விகள் வினா வங்கி-ல் இருந்து கேற்கப்படும்.</p>
+			<p>சரியான பதிலைத் தேர்ந்தெடுக்கவும்!</p>
+        </div>
+        
+		<!-- instructions -->
+        <div class="instructions tamil-font hidden" id="instructions">
+            <h3>வழிமுறைகள்:</h3>
+            <p>1. கீழே உள்ள "வினா வங்கியை தேர்ந்தெடு" பொத்தானைக் கிளிக் செய்யவும்</p>
+            <p>2.'xlsx' அல்லது 'json' கோப்பைத் தேர்ந்தெடுக்கவும்</p>
+            <p>3. கேள்விகள் தானாகவே ஏற்றப்பட்டு வினாடி வினா தொடங்கும்</p>
+            <p>4. ஒவ்வொரு கேள்விக்கும் 30 வினாடிகள் நேரம் உள்ளது</p>
+        </div>
+        
+		<!-- file upload -->
+        <div class="file-input-container hidden" id="file-input-container">
+            <label for="excel-file" class="file-input-label tamil-font">வினா வங்கியை தேர்ந்தெடு</label>
+            <input type="file" id="excel-file" accept=".xlsx, .xls,.json">      
+        </div>
+        
+        <!-- filter section -->
+        <div class="filter-container tamil-font" id="filter-container">
+            <h3>வினா வடிப்பான்</h3>
+            
+            <div class="filter-section">
+                <div class="filter-title">ஆண்டு:</div>
+                <div class="filter-buttons" id="year-buttons">
+                    <button class="filter-btn select-all" data-value="all">அனைத்தும்</button>
+                    <!-- Year buttons will be added dynamically -->
+                </div>
+            </div>
+            
+            <div class="filter-section">
+                <div class="filter-title">பாடம்:</div>
+                <div class="filter-buttons" id="subject-buttons">
+                    <button class="filter-btn select-all" data-value="all">அனைத்தும்</button>
+                    <!-- Subject buttons will be added dynamically -->
+                </div>
+            </div>
+            
+            <div class="filter-section">
+                 <div class="filter-title">கேள்வி வகை</div>
+                 <div id="type-buttons" class="filter-buttons">
+                 	<button class="filter-btn select-all" data-value="all">அனைத்தும்</button>
+                     <!-- Type filter buttons will be generated here -->
+                 </div>
+            </div>
+            
+            <div class="filter-options">
+                <div class="random-option">
+                    <input type="checkbox" id="randomize-checkbox" class="filter-checkbox" checked>
+                    <label for="randomize-checkbox">சீரற்ற கேள்விகள்</label>
+                </div>
+                
+                <div class="action-buttons">
+                    <button id="reset-filters-btn" class="reset-btn">மீட்டமை</button>
+                    <button id="apply-filters-btn" class="start-btn">வினாவைத் தொடங்கு</button>
+                </div>
+            </div>
+        </div>
+        
+		<!-- quiz board -->
+        <div class="quiz-container" id="quiz-content" style="display: none;">
+            
+			<div class="timer-container tamil-font" id="timer-container">
+				நேரம்: <span class="timer" id="timer">30</span> வினாடிகள்
+            </div>
+            			
+           <div class="question tamil-font" id="question">கேள்விகள் ஏற்றப்படுவதற்கு காத்திருக்கிறது...</div>
+           
+           <img class="container question " id="questionImage" src="" alt="கேள்விக்குரிய படம்" style="display: block;">                   	
+           
+            <div class="options">
+                <div class="option tamil-font" data-option="A">விருப்பம் A</div>
+                <div class="option tamil-font" data-option="B">விருப்பம் B</div>
+                <div class="option tamil-font" data-option="C">விருப்பம் C</div>
+                <div class="option tamil-font" data-option="D">விருப்பம் D</div>
+            </div>
+            
+            <div class="feedback" id="feedback"></div>
+            
+            <div class="navigation">
+                <button id="prev-btn" disabled>முந்தைய</button>
+                <button id="next-btn" disabled>அடுத்த கேள்வி</button>
+            </div>
+            
+            <div class="progress">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+            
+            <div class="score-container tamil-font">
+				மதிப்பெண்: <span id="score">0</span> / <span id="total-questions">0</span>
+            </div>
+            
+            <div class="end-quiz tamil-font" id="end-quiz">
+                <h2>தேர்வு முடிந்தது!</h2>
+                <p>மதிப்பெண்: <span id="final-score">0</span> / <span id="final-total">0</span></p>
+				 <div class="score-summary" id="score-summary">
+                    <h3>பாடம் வாரியான மதிப்பெண்:</h3>
+                    <!-- Subject-wise scores will be added here -->
+                </div>
+                <div>
+                    <button id="restart-btn" class="restart-btn">மறுதேர்வு</button>
+                    <button id="exit-btn" class="exit-btn">வெளியேறு</button>
+                </div>			
+            </div>
+        </div>
+    </div>
+
+<script src="./asset/quiz.js"></script>
+
+</body>
+</html>
