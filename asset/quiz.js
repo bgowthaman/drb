@@ -407,7 +407,7 @@ function processJsonData(data) {
             options: {
                 A: (item.options && item.options.A) || "விருப்பம் A",
                 B: (item.options && item.options.B) || "விருப்பம் B",
-                C: (item.options && item.options.C) || "விரு�ப்பம் C",
+                C: (item.options && item.options.C) || "விருப்பம் C",
                 D: (item.options && item.options.D) || "விருப்பம் D"
             },
             key: String(item.key || "A").charAt(0).toUpperCase()
