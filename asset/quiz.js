@@ -265,9 +265,9 @@ function logoutUser() {
     userInfoSection.classList.add('hidden');
     
     // Also hide file inputs when logging out
-    fileInputContainer.classList.add('hidden');
-    descriptionElement.classList.add('hidden');
-    instructionsElement.classList.add('hidden');
+	if (fileInputContainer) fileInputContainer.classList.add('hidden');
+	if (descriptionElement) descriptionElement.classList.add('hidden');
+	if (instructionsElement) instructionsElement.classList.add('hidden');
     
     // Hide filter container
     filterContainer.style.display = 'none';
@@ -295,9 +295,6 @@ function logoutUser() {
     // Reloads the page
     window.location.reload(); // Reloads the page
 }
-
-// Event listeners for file inputs
-excelFileInput.addEventListener('change', handleFileUpload);
 
 // Handle file upload (Excel or JSON)
 function handleFileUpload(event) {
@@ -579,14 +576,13 @@ function toggleFilter(type, value, button) {
 
 // Show filter options
 function showFilterOptions() {
-    // Hide file inputs and show filter options
-    fileInputContainer.classList.add('hidden');
-    descriptionElement.classList.add('hidden');
-    instructionsElement.classList.add('hidden');
+    if (fileInputContainer) fileInputContainer.classList.add('hidden');
+    if (descriptionElement) descriptionElement.classList.add('hidden');
+    if (instructionsElement) instructionsElement.classList.add('hidden');
     
     // Show filter container
     filterContainer.style.display = 'block';
-}
+}                               // <-- stray }
 
 // Apply filters and start quiz
 function applyFilters() {
@@ -764,9 +760,9 @@ function startQuiz(randomize = true) {
     // Show quiz content
     quizContent.style.display = 'block';
     endQuizElement.style.display = 'none';
-    fileInputContainer.classList.add('hidden');
-    descriptionElement.classList.add('hidden');
-    instructionsElement.classList.add('hidden');
+    if (fileInputContainer) fileInputContainer.classList.add('hidden');
+	if (descriptionElement) descriptionElement.classList.add('hidden');
+	if (instructionsElement) instructionsElement.classList.add('hidden');
     
     // Display first question
     displayQuestion();
