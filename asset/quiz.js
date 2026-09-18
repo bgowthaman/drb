@@ -70,6 +70,32 @@ let currentUserName = '';
 let subjectWiseScores = {}; // Track scores by subject
 let subjectWiseTotals = {}; // Track total questions by subject
 
+// Auto-load question bank from default path
+function autoLoadQuestionBank() {
+    const defaultPath = './data/question_bank.xlsx';
+    
+    fetch(defaultPath)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('கோப்பை ஏற்ற முடியவில்லை');
+            }
+            return response.arrayBuffer();
+        })
+        .then(arrayBuffer => {
+            const data = new Uint8Array(arrayBuffer);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+            
+            // Process the data (skip header row)
+            processExcelData(jsonData.slice(1));
+        })
+        .catch(error => {
+            console.error('Auto-load error:', error);
+            alert('வினா வங்கியை தானாக ஏற்ற முடியவில்லை. கோப்பு பாதை: ' + defaultPath);
+        });
+}
+
 // Initialize the application
 function initApp() {
     // Check if user exists in localStorage
@@ -85,19 +111,23 @@ function initApp() {
         // Show main score board
         showMainScoreBoard(savedUserName);
         
-        // Show file input options
-        fileInputContainer.classList.remove('hidden');
-        descriptionElement.classList.remove('hidden');
-        instructionsElement.classList.remove('hidden');
+		// Show file input options
+        //fileInputContainer.classList.remove('hidden');
+        //descriptionElement.classList.remove('hidden');
+        //instructionsElement.classList.remove('hidden');
+		
+		// Auto-load question bank instead of showing file input
+		autoLoadQuestionBank();
+	
     } else {
         // Show login form
         loginSection.classList.remove('hidden');
         userInfoSection.classList.add('hidden');
         
         // Hide file inputs until user logs in
-        fileInputContainer.classList.add('hidden');
-        descriptionElement.classList.add('hidden');
-        instructionsElement.classList.add('hidden');
+        //fileInputContainer.classList.add('hidden');
+        //descriptionElement.classList.add('hidden');
+        //instructionsElement.classList.add('hidden');
     }
 }
 
@@ -117,9 +147,13 @@ function loginUser() {
         showMainScoreBoard(userName);
         
         // Show file input options
-        fileInputContainer.classList.remove('hidden');
-        descriptionElement.classList.remove('hidden');
-        instructionsElement.classList.remove('hidden');
+        //fileInputContainer.classList.remove('hidden');
+        //descriptionElement.classList.remove('hidden');
+        //instructionsElement.classList.remove('hidden');
+		
+		// Auto-load question bank instead of showing file input
+        autoLoadQuestionBank();
+		
     } else {
         alert('தயவு செய்து உங்கள் பெயரை உள்ளிடவும்');
     }
@@ -1053,12 +1087,15 @@ function exitQuiz() {
     endQuizElement.style.display = 'none';
     
     // Show file input options again
-    fileInputContainer.classList.remove('hidden');
-    descriptionElement.classList.remove('hidden');
-    instructionsElement.classList.remove('hidden');
-    
+    //fileInputContainer.classList.remove('hidden');
+    //descriptionElement.classList.remove('hidden');
+    //instructionsElement.classList.remove('hidden');
+	    
     // Clear file inputs
-    excelFileInput.value = '';         
+    //excelFileInput.value = '';
+
+    // Reload question bank automatically
+    autoLoadQuestionBank();	
 }
 
 // Event listeners
