@@ -91,7 +91,7 @@ if (savedUser) {
 // --- EXCEL LOAD & PARSE LOGIC ---
 function loadFile() {
     // Automatically try to load the xlsx file (Assuming it is in the same directory)
-    fetch('./drb_2025.xlsx')
+    fetch('./question_bank.xlsx')
         .then(response => {
             if (!response.ok) throw new Error("File not found");
             return response.arrayBuffer();
@@ -106,9 +106,9 @@ function loadFile() {
             processData(json);
         })
         .catch(error => {
-            console.error("Auto-load failed. Please ensure drb_2025.xlsx is in the same folder.", error);
+            console.error("Auto-load failed. Please ensure question_bank.xlsx is in the same folder.", error);
             // Fallback: Allow manual upload if auto-load fails
-            alert("Excel file not found! Please place 'drb_2025.xlsx' in the same folder as index.html");
+            alert("Excel file not found! Please place 'question_bank.xlsx' in the same folder as index.html");
         });
 }
 
