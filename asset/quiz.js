@@ -1,4 +1,4 @@
-// Quiz v18.3 - Restored quiz_bk2.js logic with new Excel Columns (MASTER_DATA)
+// Quiz v18.3 - Fully Fixed & Restored (Randomize, ID Filters, Timer, Scores)
 // Developed by GOWTHAMAN B
 
 // DOM elements
@@ -68,29 +68,22 @@ let subjectWiseTotals = {};
 
 // Auto-load question bank from default path with cache busting
 function autoLoadQuestionBank() {
-    // Add timestamp to prevent browser caching of the old file
     const timestamp = new Date().getTime();
     const defaultPath = `./data/question_bank.xlsx?v=${timestamp}`;
     
     fetch(defaultPath)
         .then(response => {
-            if (!response.ok) {
-                throw new Error('கோப்பை ஏற்ற முடியவில்லை');
-            }
+            if (!response.ok) throw new Error('கோப்பை ஏற்ற முடியவில்லை');
             return response.arrayBuffer();
         })
         .then(arrayBuffer => {
             const data = new Uint8Array(arrayBuffer);
             const workbook = XLSX.read(data, { type: 'array' });
             
-            // Explicitly target 'MASTER_DATA' sheet
             const sheetName = workbook.SheetNames.includes('MASTER_DATA') ? 'MASTER_DATA' : workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
-            
-            // Convert to JSON objects using column headers
             const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
             
-            // Process the data
             processExcelData(jsonData);
         })
         .catch(error => {
@@ -220,7 +213,7 @@ function logoutUser() {
     window.location.reload(); 
 }
 
-// Process Excel data from object-based parsing
+// Process Excel data
 function processExcelData(data) {
     const processText = (text) => {
         if (!text) return "";
@@ -229,12 +222,11 @@ function processExcelData(data) {
         return processed;
     };
 
-    // ID வழியாக தேர்வு பெயரை (DRB_2025 / SRB_2025_1) பிரித்தெடுக்கும் செயல்பாடு
     const extractYear = (idString) => {
         if (!idString) return "வருடம்";
         const parts = String(idString).trim().split('_');
         if (parts.length > 1) {
-            parts.pop(); // கடைசி கேள்வி எண்ணை நீக்கு
+            parts.pop(); 
             return parts.join('_').toUpperCase(); 
         }
         return "வருடம்";
@@ -242,7 +234,7 @@ function processExcelData(data) {
 
     quizData = data.map(row => {
         return {
-            year: extractYear(row.id), // id வழியாக ஆண்டை எடுக்கிறோம்
+            year: extractYear(row.id), 
             subject: processText(row.subject) || "பாடம்",
             type: processText(row.type) || "வடிவம்",
             question: processText(row.question) || "கேள்வி இல்லை",
@@ -265,6 +257,7 @@ function processExcelData(data) {
         questionElement.textContent = "கோப்பில் ஏற்றத்தக்க தரவு இல்லை";
     }
 }
+
 // Extract available filters
 function extractFilters(questions) {
     availableYears = ['all'];
@@ -374,7 +367,7 @@ function showFilterOptions() {
     filterContainer.style.display = 'block';
 }
 
-// Apply filters and start quiz
+// 🔥 FIX 1: Apply filters with Randomize logic
 function applyFilters() {
     const randomize = randomizeCheckbox.checked;
     saveFilters(selectedYears, selectedSubjects, selectedTypes, randomize);
@@ -424,9 +417,13 @@ function applyFilters() {
         };
     }).filter(item => item.question !== "கேள்வி இல்லை");
     
+    // 🔥 ஷஃபிள் (Shuffle) செய்யும் பகுதி இங்கே சேர்க்கப்பட்டுள்ளது
     if (quizData.length > 0) {
+        if (randomize) {
+            quizData = quizData.sort(() => Math.random() - 0.5);
+        }
         filterContainer.style.display = 'none';
-        startQuiz(randomize);
+        startQuiz();
     }
 }
 
@@ -479,7 +476,7 @@ function resetFilters() {
 }
 
 // Start Quiz
-function startQuiz(randomize = true) {
+function startQuiz() {
     subjectWiseScores = {};
     subjectWiseTotals = {};			
     questionOrder = Array.from({length: quizData.length}, (_, i) => i);
@@ -505,7 +502,7 @@ function displayQuestionImage() {
     const question = quizData[questionIndex];
     
     if (question.image_path && question.image_path !== "") {
-        const baseImagePath = "./data/image/"; // Change this if your images are elsewhere
+        const baseImagePath = "./data/image/"; 
         let fullImagePath = question.image_path;
         if(!fullImagePath.startsWith('http') && !fullImagePath.startsWith('./') && !fullImagePath.startsWith('images/')){
             fullImagePath = baseImagePath + question.image_path;
@@ -541,7 +538,7 @@ function displayQuestion() {
             }
             if (userAnswers[questionIndex].selected === optionKey) {
                 option.classList.add('selected');
-            }                    
+            }					
         }
     });
                                 
