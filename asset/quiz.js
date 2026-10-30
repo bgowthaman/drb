@@ -229,23 +229,20 @@ function processExcelData(data) {
         return processed;
     };
 
-    const extractYear = (dateVal) => {
-        if (!dateVal) return "வருடம்";
-        
-        // Excel-ல் தேதி எண்ணாக (Serial Date) இருந்தால்
-        if (typeof dateVal === 'number') {
-            const date = new Date((dateVal - 25569) * 86400 * 1000);
-            return date.getFullYear().toString();
+    // ID வழியாக தேர்வு பெயரை (DRB_2025 / SRB_2025_1) பிரித்தெடுக்கும் செயல்பாடு
+    const extractYear = (idString) => {
+        if (!idString) return "வருடம்";
+        const parts = String(idString).trim().split('_');
+        if (parts.length > 1) {
+            parts.pop(); // கடைசி கேள்வி எண்ணை நீக்கு
+            return parts.join('_').toUpperCase(); 
         }
-        
-        // String-ஆக இருந்தால்
-        const match = String(dateVal).match(/\d{4}/);
-        return match ? match[0] : "வருடம்";
+        return "வருடம்";
     };
 
     quizData = data.map(row => {
         return {
-            year: extractYear(row.date), 
+            year: extractYear(row.id), // id வழியாக ஆண்டை எடுக்கிறோம்
             subject: processText(row.subject) || "பாடம்",
             type: processText(row.type) || "வடிவம்",
             question: processText(row.question) || "கேள்வி இல்லை",
@@ -268,7 +265,6 @@ function processExcelData(data) {
         questionElement.textContent = "கோப்பில் ஏற்றத்தக்க தரவு இல்லை";
     }
 }
-
 // Extract available filters
 function extractFilters(questions) {
     availableYears = ['all'];
