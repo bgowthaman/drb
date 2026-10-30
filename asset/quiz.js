@@ -229,9 +229,17 @@ function processExcelData(data) {
         return processed;
     };
 
-    const extractYear = (dateStr) => {
-        if (!dateStr) return "வருடம்";
-        const match = String(dateStr).match(/\d{4}/);
+    const extractYear = (dateVal) => {
+        if (!dateVal) return "வருடம்";
+        
+        // Excel-ல் தேதி எண்ணாக (Serial Date) இருந்தால்
+        if (typeof dateVal === 'number') {
+            const date = new Date((dateVal - 25569) * 86400 * 1000);
+            return date.getFullYear().toString();
+        }
+        
+        // String-ஆக இருந்தால்
+        const match = String(dateVal).match(/\d{4}/);
         return match ? match[0] : "வருடம்";
     };
 
