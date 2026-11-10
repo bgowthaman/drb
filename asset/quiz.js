@@ -1,7 +1,30 @@
-// Quiz v18.3 - Restored quiz_bk2.js logic with new Excel Columns (MASTER_DATA)
-// Developed by GOWTHAMAN B
+// Quiz v20.2 - Firebase Integrated with Old UI Logic (No Filter Changes)
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, setPersistence, browserLocalPersistence,
+         signInWithEmailAndPassword, signOut, onAuthStateChanged }
+       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+         doc, getDoc, setDoc, updateDoc, collection, getDocs }
+       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-// DOM elements
+// ⚠️ உங்கள் FIREBASE CONFIG
+const firebaseConfig = {
+    apiKey: "AIzaSyCzM21SGVy2DZm7c0X8EB0CJcnhZ7mNBn8",
+    authDomain: "webapp-cd3a5.firebaseapp.com",
+    projectId: "webapp-cd3a5",
+    storageBucket: "webapp-cd3a5.firebasestorage.app",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+await setPersistence(auth, browserLocalPersistence);
+const db   = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+});
+
+// DOM Elements
 const questionElement = document.getElementById('question');
 const optionElements = document.querySelectorAll('.option');
 const feedbackElement = document.getElementById('feedback');
@@ -15,15 +38,12 @@ const finalScoreElement = document.getElementById('final-score');
 const finalTotalElement = document.getElementById('final-total');
 const restartButton = document.getElementById('restart-btn');
 const exitButton = document.getElementById('exit-btn');
-const descriptionElement = document.getElementById('description');
-const instructionsElement = document.getElementById('instructions');
 const timerContainer = document.getElementById('timer-container');
 const timerElement = document.getElementById('timer');
 const quizContent = document.getElementById('quiz-content');
 const scoreSummaryElement = document.getElementById('score-summary');
 const imageElement = document.getElementById('questionImage');
 
-// Filter elements
 const filterContainer = document.getElementById('filter-container');
 const yearButtonsContainer = document.getElementById('year-buttons');
 const subjectButtonsContainer = document.getElementById('subject-buttons');
@@ -31,221 +51,90 @@ const typeButtonsContainer = document.getElementById('type-buttons');
 const randomizeCheckbox = document.getElementById('randomize-checkbox');
 const applyFiltersBtn = document.getElementById('apply-filters-btn');
 const resetFiltersBtn = document.getElementById('reset-filters-btn');
+const injectWrongCheckbox = document.getElementById('inject-wrong-checkbox');
 
-// User elements
-const welcomeMessage = document.getElementById('welcome-message');
-const userNameInput = document.getElementById('user-name');
-const loginBtn = document.getElementById('login-btn');
-const logoutBtn = document.getElementById('logout-btn');
 const loginSection = document.getElementById('login-section');
 const userInfoSection = document.getElementById('user-info-section');
+const lockScreen = document.getElementById('lock-screen');
 
-// Score elements
-const mainScoreBoard = document.getElementById('main-score-board');
-const scoreDetails = document.getElementById('score-details');
-const averageScoreElement = document.getElementById('average-score');
-
-// Quiz state
+// State
+let currentUid = null;
+let allQuestions = [];
+let wrongQuestions = {};
 let quizData = [];
 let currentQuestionIndex = 0;
 let score = 0;
-let selectedOption = null;
+let userAnswers = {};
 let questionOrder = [];
-let userAnswers = {}; 
+let subjectWiseScores = {};
 let timerInterval = null;
-let timeLeft = 30;		
-let allQuestions = []; 
-let availableYears = [];
-let availableSubjects = [];
-let availableTypes = []; 
-let selectedYears = [];
-let selectedSubjects = [];
-let selectedTypes = []; 
-let currentFilters = {};
-let currentUserName = '';
-let subjectWiseScores = {}; 
-let subjectWiseTotals = {}; 
+let timeLeft = 30;
+let questionStartTime = 0;
+let sessionStartTime = 0;
+let isRepairMode = false;
 
-// Auto-load question bank from default path with cache busting
-function autoLoadQuestionBank() {
-    // Add timestamp to prevent browser caching of the old file
+let availableYears = [], availableSubjects = [], availableTypes = [];
+let selectedYears = [], selectedSubjects = [], selectedTypes = [];
+
+// STAGE CONFIG
+const STAGE_CONFIG = {
+    1: { maxStars: 5,  mode: 'optional'   },
+    2: { maxStars: 10, mode: 'compulsory' },
+    3: { maxStars: 15, mode: 'locked'     },
+    4: { maxStars: 20, mode: 'locked'     },
+    5: { maxStars: 25, mode: 'locked'     }
+};
+
+function isMastered(wq) { return wq && wq.weightage === 5 && wq.stars >= STAGE_CONFIG[5].maxStars; }
+function applyAnswer(wq, isCorrect) {
+    if (!wq) return isCorrect ? null : { weightage:1, stars:0, wrongCount:1, correctCount:0 };
+    const cfg = STAGE_CONFIG[wq.weightage];
+    const atMax = wq.stars >= cfg.maxStars;
+    if (isCorrect) return { ...wq, stars: Math.min(wq.stars + 1, cfg.maxStars), correctCount: (wq.correctCount || 0) + 1 };
+    if (atMax && wq.weightage < 5) return { ...wq, weightage: wq.weightage + 1, stars: 0, wrongCount: (wq.wrongCount || 0) + 1 };
+    return { ...wq, stars: Math.max(wq.stars - 1, 0), wrongCount: (wq.wrongCount || 0) + 1 };
+}
+function isLocked(wqMap) { return Object.values(wqMap).some(q => q.weightage >= 3 && !isMastered(q)); }
+
+// 🔥 Fetch Question Bank
+async function loadQuestionBank() {
     const timestamp = new Date().getTime();
     const defaultPath = `./data/question_bank.xlsx?v=${timestamp}`;
-    
-    fetch(defaultPath)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('கோப்பை ஏற்ற முடியவில்லை');
-            }
-            return response.arrayBuffer();
-        })
-        .then(arrayBuffer => {
-            const data = new Uint8Array(arrayBuffer);
-            const workbook = XLSX.read(data, { type: 'array' });
-            
-            // Explicitly target 'MASTER_DATA' sheet
-            const sheetName = workbook.SheetNames.includes('MASTER_DATA') ? 'MASTER_DATA' : workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            
-            // Convert to JSON objects using column headers
-            const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-            
-            // Process the data
-            processExcelData(jsonData);
-        })
-        .catch(error => {
-            console.error('Auto-load error:', error);
-            alert('வினா வங்கியை தானாக ஏற்ற முடியவில்லை. கோப்பு பாதை: ' + defaultPath);
-        });
-}
-
-// Initialize the application
-function initApp() {
-    const savedUserName = localStorage.getItem('quizUserName');
-    
-    if (savedUserName) {
-        currentUserName = savedUserName;
-        welcomeMessage.textContent = `வணக்கம் ${savedUserName}!`;
-        loginSection.classList.add('hidden');
-        userInfoSection.classList.remove('hidden');
-        showMainScoreBoard(savedUserName);
-        autoLoadQuestionBank();
-    } else {
-        loginSection.classList.remove('hidden');
-        userInfoSection.classList.add('hidden');
+    try {
+        const response = await fetch(defaultPath);
+        if (!response.ok) throw new Error('கோப்பை ஏற்ற முடியவில்லை');
+        const arrayBuffer = await response.arrayBuffer();
+        const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
+        const sheetName = workbook.SheetNames.includes('MASTER_DATA') ? 'MASTER_DATA' : workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+        processExcelData(jsonData);
+    } catch (error) {
+        console.error('Auto-load error:', error);
+        alert('வினா வங்கியை தானாக ஏற்ற முடியவில்லை.');
     }
 }
 
-// Login user
-function loginUser() {
-    const userName = userNameInput.value.trim();
-    if (userName) {
-        currentUserName = userName;
-        welcomeMessage.textContent = `வணக்கம் ${userName}!`;
-        loginSection.classList.add('hidden');
-        userInfoSection.classList.remove('hidden');
-        localStorage.setItem('quizUserName', userName);
-        showMainScoreBoard(userName);
-        autoLoadQuestionBank();
-    } else {
-        alert('தயவு செய்து உங்கள் பெயரை உள்ளிடவும்');
-    }
-}
-
-// Show main score board
-function showMainScoreBoard(userName) {
-    const userScores = JSON.parse(localStorage.getItem('userScores') || '{}');
-    const userData = userScores[userName] || {};
-    
-    let scoresHTML = '';
-    let totalScore = 0;
-    let totalPossible = 0;
-    let subjectAverages = {};
-    let quizCounts = {}; 
-    
-    if (Object.keys(userData).length === 0) {
-        scoresHTML = '<p>இதுவரை மதிப்பெண்கள் இல்லை</p>';
-        averageScoreElement.textContent = '0';
-    } else {
-        subjectAverages = {};
-        quizCounts = {};
-        
-        for (const [quizId, quizData] of Object.entries(userData)) {
-            if (quizId === 'quizzes') continue;
-            quizCounts[quizId] = true;
-            
-            for (const [subject, data] of Object.entries(quizData.subjects || {})) {
-                if (!subjectAverages[subject]) {
-                    subjectAverages[subject] = { totalScore: 0, totalPossible: 0, count: 0 };
-                }
-                subjectAverages[subject].totalScore += data.score;
-                subjectAverages[subject].totalPossible += data.total;
-                subjectAverages[subject].count++;
-                
-                totalScore += data.score;
-                totalPossible += data.total;
-            }
-        }
-        
-        const overallAverage = totalPossible > 0 ? Math.round((totalScore / totalPossible) * 100) : 0;
-        averageScoreElement.textContent = overallAverage;
-        
-        scoresHTML += '<div class="average-score"></div>';
-        
-        for (const [subject, data] of Object.entries(subjectAverages)) {
-            const average = data.totalPossible > 0 ? Math.round((data.totalScore / data.totalPossible) * 100) : 0;
-            scoresHTML += `
-                <div class="subject-score">
-                    <span>${subject}:</span>
-                    <span>${average}% (${data.totalScore}/${data.totalPossible})</span>
-                </div>
-            `;
-        }
-        
-        const totalQuizzes = Object.keys(quizCounts).length;
-        scoresHTML += `<div class="subject-score">
-            <span><b>தேர்வுகள்: ${totalQuizzes}</b></span>
-            <span><b>${overallAverage}% (${totalScore}/${totalPossible})</b></span>
-        </div>`;
-    }
-    
-    scoreDetails.innerHTML = scoresHTML;
-    mainScoreBoard.style.display = 'block';
-}
-
-// Save user scores
-function saveUserScores() {
-    const userScores = JSON.parse(localStorage.getItem('userScores') || '{}');
-    if (!userScores[currentUserName]) userScores[currentUserName] = { quizzes: {} };
-    const quizId = `quiz_${Date.now()}`;
-    
-    userScores[currentUserName][quizId] = {
-        date: new Date().toISOString(),
-        totalScore: score,
-        totalQuestions: quizData.length,
-        subjects: {...subjectWiseScores}
-    };
-    
-    if (!userScores[currentUserName].quizzes) userScores[currentUserName].quizzes = {};
-    userScores[currentUserName].quizzes[quizId] = true;
-    
-    localStorage.setItem('userScores', JSON.stringify(userScores));
-    localStorage.setItem('quizUserName', currentUserName);
-}
-
-// Logout user
-function logoutUser() {
-    localStorage.removeItem('quizUserName');
-    currentUserName = '';
-    window.location.reload(); 
-}
-
-// Process Excel data from object-based parsing
+// 🔥 Process Excel
 function processExcelData(data) {
     const processText = (text) => {
         if (!text) return "";
-        let processed = String(text).replace(/\n/g, '<br>');
-        processed = processed.replace(/<br\s*\/?>/gi, '<br>');
-        return processed;
+        return String(text).replace(/\n/g, '<br>');
     };
-
-    const extractYear = (dateVal) => {
-        if (!dateVal) return "வருடம்";
-        
-        // Excel-ல் தேதி எண்ணாக (Serial Date) இருந்தால்
-        if (typeof dateVal === 'number') {
-            const date = new Date((dateVal - 25569) * 86400 * 1000);
-            return date.getFullYear().toString();
+    const extractYear = (idString) => {
+        if (!idString) return "வருடம்";
+        const parts = String(idString).trim().split('_');
+        if (parts.length > 1) {
+            parts.pop(); 
+            return parts.join('_').toUpperCase(); 
         }
-        
-        // String-ஆக இருந்தால்
-        const match = String(dateVal).match(/\d{4}/);
-        return match ? match[0] : "வருடம்";
+        return "வருடம்";
     };
 
-    quizData = data.map(row => {
+    allQuestions = data.map(row => {
         return {
-            year: extractYear(row.date), 
+            id: String(row.id || '').trim(),
+            year: extractYear(row.id), 
             subject: processText(row.subject) || "பாடம்",
             type: processText(row.type) || "வடிவம்",
             question: processText(row.question) || "கேள்வி இல்லை",
@@ -256,25 +145,19 @@ function processExcelData(data) {
                 C: processText(row.c) || "விருப்பம் C",
                 D: processText(row.d) || "விருப்பம் D"
             },
-            key: String(row.key || "A").trim().toUpperCase(),					
+            key: String(row.key || "A").trim().toUpperCase()
         };
     }).filter(item => item.question !== "கேள்வி இல்லை");
-    
-    if (quizData.length > 0) {
-        allQuestions = quizData;
+
+    if (allQuestions.length > 0) {
         extractFilters(allQuestions);
         showFilterOptions();
-    } else {
-        questionElement.textContent = "கோப்பில் ஏற்றத்தக்க தரவு இல்லை";
     }
 }
 
-// Extract available filters
+// 🔥 Filters (No changes from v20.0)
 function extractFilters(questions) {
-    availableYears = ['all'];
-    availableSubjects = ['all'];
-    availableTypes = ['all'];
-    
+    availableYears = ['all']; availableSubjects = ['all']; availableTypes = ['all'];
     questions.forEach(item => {
         if (item.year && !availableYears.includes(item.year)) availableYears.push(item.year);
         if (item.subject && !availableSubjects.includes(item.subject)) availableSubjects.push(item.subject);
@@ -283,38 +166,34 @@ function extractFilters(questions) {
     
     yearButtonsContainer.innerHTML = '';
     availableYears.sort().forEach(year => {
-        const button = document.createElement('button');
-        button.className = 'filter-btn';
-        button.textContent = year === 'all' ? 'அனைத்தும்' : year;
-        button.setAttribute('data-value', year);
-        button.addEventListener('click', () => toggleFilter('year', year, button));
-        yearButtonsContainer.appendChild(button);
+        const btn = document.createElement('button');
+        btn.className = 'filter-btn'; btn.textContent = year === 'all' ? 'அனைத்தும்' : year;
+        btn.setAttribute('data-value', year);
+        btn.addEventListener('click', () => toggleFilter('year', year, btn));
+        yearButtonsContainer.appendChild(btn);
     });
     
     subjectButtonsContainer.innerHTML = '';
-    availableSubjects.sort().forEach(subject => {
-        const button = document.createElement('button');
-        button.className = 'filter-btn';
-        button.textContent = subject === 'all' ? 'அனைத்தும்' : subject;
-        button.setAttribute('data-value', subject);
-        button.addEventListener('click', () => toggleFilter('subject', subject, button));
-        subjectButtonsContainer.appendChild(button);
+    availableSubjects.sort().forEach(sub => {
+        const btn = document.createElement('button');
+        btn.className = 'filter-btn'; btn.textContent = sub === 'all' ? 'அனைத்தும்' : sub;
+        btn.setAttribute('data-value', sub);
+        btn.addEventListener('click', () => toggleFilter('subject', sub, btn));
+        subjectButtonsContainer.appendChild(btn);
     });
     
     typeButtonsContainer.innerHTML = '';
     availableTypes.sort().forEach(type => {
-        const button = document.createElement('button');
-        button.className = 'filter-btn';
-        button.textContent = type === 'all' ? 'அனைத்தும்' : type;
-        button.setAttribute('data-value', type);
-        button.addEventListener('click', () => toggleFilter('type', type, button));
-        typeButtonsContainer.appendChild(button);
+        const btn = document.createElement('button');
+        btn.className = 'filter-btn'; btn.textContent = type === 'all' ? 'அனைத்தும்' : type;
+        btn.setAttribute('data-value', type);
+        btn.addEventListener('click', () => toggleFilter('type', type, btn));
+        typeButtonsContainer.appendChild(btn);
     });
     
     loadSavedFilters();
 }
 
-// Toggle filter selection
 function toggleFilter(type, value, button) {
     if (value === 'all') {
         if (type === 'year') {
@@ -329,332 +208,262 @@ function toggleFilter(type, value, button) {
         }
         return;
     }
-    
     button.classList.toggle('selected');
-    
     if (type === 'year') {
-        if (button.classList.contains('selected')) selectedYears.push(value);
-        else selectedYears = selectedYears.filter(y => y !== value);
-        
+        if (button.classList.contains('selected')) selectedYears.push(value); else selectedYears = selectedYears.filter(y => y !== value);
         const allBtn = document.querySelector('#year-buttons .filter-btn[data-value="all"]');
-        if (selectedYears.length === availableYears.length - 1) {
-            allBtn.classList.add('selected');
-            selectedYears.push('all');
-        } else {
-            allBtn.classList.remove('selected');
-            selectedYears = selectedYears.filter(y => y !== 'all');
-        }
+        if (selectedYears.length === availableYears.length - 1) { allBtn.classList.add('selected'); selectedYears.push('all'); } 
+        else { allBtn.classList.remove('selected'); selectedYears = selectedYears.filter(y => y !== 'all'); }
     } else if (type === 'subject') {
-        if (button.classList.contains('selected')) selectedSubjects.push(value);
-        else selectedSubjects = selectedSubjects.filter(s => s !== value);
-        
+        if (button.classList.contains('selected')) selectedSubjects.push(value); else selectedSubjects = selectedSubjects.filter(s => s !== value);
         const allBtn = document.querySelector('#subject-buttons .filter-btn[data-value="all"]');
-        if (selectedSubjects.length === availableSubjects.length - 1) {
-            allBtn.classList.add('selected');
-            selectedSubjects.push('all');
-        } else {
-            allBtn.classList.remove('selected');
-            selectedSubjects = selectedSubjects.filter(s => s !== 'all');
-        }
+        if (selectedSubjects.length === availableSubjects.length - 1) { allBtn.classList.add('selected'); selectedSubjects.push('all'); } 
+        else { allBtn.classList.remove('selected'); selectedSubjects = selectedSubjects.filter(s => s !== 'all'); }
     } else {
-        if (button.classList.contains('selected')) selectedTypes.push(value);
-        else selectedTypes = selectedTypes.filter(t => t !== value);
-        
+        if (button.classList.contains('selected')) selectedTypes.push(value); else selectedTypes = selectedTypes.filter(t => t !== value);
         const allBtn = document.querySelector('#type-buttons .filter-btn[data-value="all"]');
-        if (selectedTypes.length === availableTypes.length - 1) {
-            allBtn.classList.add('selected');
-            selectedTypes.push('all');
-        } else {
-            allBtn.classList.remove('selected');
-            selectedTypes = selectedTypes.filter(t => t !== 'all');
-        }
-    }
-}
-
-// Show filter options
-function showFilterOptions() {
-    if (descriptionElement) descriptionElement.classList.add('hidden');
-    if (instructionsElement) instructionsElement.classList.add('hidden');
-    filterContainer.style.display = 'block';
-}
-
-// Apply filters and start quiz
-function applyFilters() {
-    const randomize = randomizeCheckbox.checked;
-    saveFilters(selectedYears, selectedSubjects, selectedTypes, randomize);
-    
-    let filteredQuestions = allQuestions;
-    
-    if (selectedYears.length > 0 && !selectedYears.includes('all')) {
-        filteredQuestions = filteredQuestions.filter(q => selectedYears.includes(q.year));
-    }
-    if (selectedSubjects.length > 0 && !selectedSubjects.includes('all')) {
-        filteredQuestions = filteredQuestions.filter(q => selectedSubjects.includes(q.subject));
-    }
-    if (selectedTypes.length > 0 && !selectedTypes.includes('all')) {
-        filteredQuestions = filteredQuestions.filter(q => selectedTypes.includes(q.type));
-    }
-    
-    if (filteredQuestions.length === 0) {
-        alert('தேர்ந்தெடுத்த வடிப்பான்களுக்கு ஏற்ற கேள்விகள் இல்லை.');
-        return;
-    }
-    
-    currentFilters = {
-        years: [...selectedYears],
-        subjects: [...selectedSubjects],
-        types: [...selectedTypes],
-        randomize: randomize
-    };
-    
-    quizData = filteredQuestions.map(item => {
-        const processText = (text) => {
-            if (!text) return "";
-            return String(text).replace(/\n/g, '<br>').replace(/<br\s*\/?>/gi, '<br>');
-        };
-        return {
-            question: processText(item.question) || "கேள்வி இல்லை",
-            image_path: item.image_path || "",
-            options: {
-                A: processText(item.options?.A) || "விருப்பம் A",
-                B: processText(item.options?.B) || "விருப்பம் B",
-                C: processText(item.options?.C) || "விருப்பம் C",
-                D: processText(item.options?.D) || "விருப்பம் D"
-            },
-            key: String(item.key || "A").trim().toUpperCase(),
-            year: item.year || "வருடம்",
-            subject: item.subject || "பொது",
-            type: item.type || "வடிவம்"
-        };
-    }).filter(item => item.question !== "கேள்வி இல்லை");
-    
-    if (quizData.length > 0) {
-        filterContainer.style.display = 'none';
-        startQuiz(randomize);
-    }
-}
-
-// Save/Load/Reset Filters
-function saveFilters(years, subjects, types, randomize) {
-    if (typeof(Storage) !== "undefined") {
-        localStorage.setItem('quizFilters', JSON.stringify({ years, subjects, types, randomize }));
+        if (selectedTypes.length === availableTypes.length - 1) { allBtn.classList.add('selected'); selectedTypes.push('all'); } 
+        else { allBtn.classList.remove('selected'); selectedTypes = selectedTypes.filter(t => t !== 'all'); }
     }
 }
 
 function loadSavedFilters() {
-    if (typeof(Storage) !== "undefined") {
-        const savedFilters = localStorage.getItem('quizFilters');
-        if (savedFilters) {
-            const filters = JSON.parse(savedFilters);
-            if (filters.years) {
-                selectedYears = filters.years;
-                document.querySelectorAll('#year-buttons .filter-btn').forEach(btn => {
-                    if (selectedYears.includes(btn.getAttribute('data-value'))) btn.classList.add('selected');
-                });
-            }
-            if (filters.subjects) {
-                selectedSubjects = filters.subjects;
-                document.querySelectorAll('#subject-buttons .filter-btn').forEach(btn => {
-                    if (selectedSubjects.includes(btn.getAttribute('data-value'))) btn.classList.add('selected');
-                });
-            }
-            if (filters.types) {
-                selectedTypes = filters.types;
-                document.querySelectorAll('#type-buttons .filter-btn').forEach(btn => {
-                    if (selectedTypes.includes(btn.getAttribute('data-value'))) btn.classList.add('selected');
-                });
-            }
-            if (filters.randomize !== undefined) randomizeCheckbox.checked = filters.randomize;
-        } else {
-            selectedYears = [...availableYears];
-            selectedSubjects = [...availableSubjects];
-            selectedTypes = [...availableTypes];
-            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.add('selected'));
-        }
+    const saved = localStorage.getItem('quizFilters');
+    if (saved) {
+        const f = JSON.parse(saved);
+        if (f.years) { selectedYears = f.years; document.querySelectorAll('#year-buttons .filter-btn').forEach(btn => { if (selectedYears.includes(btn.getAttribute('data-value'))) btn.classList.add('selected'); }); }
+        if (f.subjects) { selectedSubjects = f.subjects; document.querySelectorAll('#subject-buttons .filter-btn').forEach(btn => { if (selectedSubjects.includes(btn.getAttribute('data-value'))) btn.classList.add('selected'); }); }
+        if (f.types) { selectedTypes = f.types; document.querySelectorAll('#type-buttons .filter-btn').forEach(btn => { if (selectedTypes.includes(btn.getAttribute('data-value'))) btn.classList.add('selected'); }); }
+        if (f.randomize !== undefined) randomizeCheckbox.checked = f.randomize;
+    } else {
+        selectedYears = [...availableYears]; selectedSubjects = [...availableSubjects]; selectedTypes = [...availableTypes];
+        document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.add('selected'));
     }
+}
+
+function showFilterOptions() { filterContainer.style.display = 'block'; }
+
+// 🔥 Apply Filters (No changes from v20.0)
+function applyFilters() {
+    const randomize = randomizeCheckbox.checked;
+    const inject = injectWrongCheckbox ? injectWrongCheckbox.checked : false;
+    localStorage.setItem('quizFilters', JSON.stringify({ years: selectedYears, subjects: selectedSubjects, types: selectedTypes, randomize }));
+
+    let filtered = allQuestions;
+    if (selectedYears.length > 0 && !selectedYears.includes('all')) filtered = filtered.filter(q => selectedYears.includes(q.year));
+    if (selectedSubjects.length > 0 && !selectedSubjects.includes('all')) filtered = filtered.filter(q => selectedSubjects.includes(q.subject));
+    if (selectedTypes.length > 0 && !selectedTypes.includes('all')) filtered = filtered.filter(q => selectedTypes.includes(q.type));
+    
+    const wrongIds = new Set();
+    Object.entries(wrongQuestions).forEach(([id, wq]) => {
+        if (isMastered(wq)) return;
+        if (wq.weightage >= 2) wrongIds.add(id);
+        else if (wq.weightage === 1 && inject) wrongIds.add(id);
+    });
+
+    const injected = allQuestions.filter(q => {
+        if (!wrongIds.has(q.id)) return false;
+        const wq = wrongQuestions[q.id];
+        if (wq.weightage >= 2) return true;
+        if (!selectedYears.includes('all') && !selectedYears.includes(q.year)) return false;
+        if (!selectedSubjects.includes('all') && !selectedSubjects.includes(q.subject)) return false;
+        if (!selectedTypes.includes('all') && !selectedTypes.includes(q.type)) return false;
+        return true;
+    });
+
+    const seen = new Set(filtered.map(q => q.id));
+    injected.forEach(q => { if (!seen.has(q.id)) { filtered.push(q); seen.add(q.id); } });
+
+    if (filtered.length === 0) { alert('கேள்விகள் இல்லை'); return; }
+    quizData = filtered;
+    if (randomize) quizData = quizData.sort(() => Math.random() - 0.5);
+    filterContainer.style.display = 'none';
+    startQuiz();
 }
 
 function resetFilters() {
-    selectedYears = [...availableYears];
-    selectedSubjects = [...availableSubjects];
-    selectedTypes = [...availableTypes];
+    selectedYears = [...availableYears]; selectedSubjects = [...availableSubjects]; selectedTypes = [...availableTypes];
     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.add('selected'));
-    randomizeCheckbox.checked = true;
+    randomizeCheckbox.checked = true; if(injectWrongCheckbox) injectWrongCheckbox.checked = false;
 }
 
-// Start Quiz
-function startQuiz(randomize = true) {
+// 🔥 Firebase Functions
+async function loadWrongQuestions(uid) {
+    const snap = await getDocs(collection(db, 'users', uid, 'wrongQuestions'));
+    const out = {}; snap.forEach(d => { out[d.id] = d.data(); }); return out;
+}
+async function saveWrongQuestion(uid, qid, data) { await setDoc(doc(db, 'users', uid, 'wrongQuestions', qid), data, { merge: true }); }
+async function saveQuizSession(uid, sid, data) { await setDoc(doc(db, 'users', uid, 'quizSessions', sid), data); }
+async function loadQuizSessions(uid) {
+    const snap = await getDocs(collection(db, 'users', uid, 'quizSessions'));
+    const arr = []; snap.forEach(d => arr.push(d.data())); return arr;
+}
+
+// 🔥 Login & Auth
+document.getElementById('login-btn').addEventListener('click', async () => {
+    const email = document.getElementById('login-email').value.trim();
+    const pass  = document.getElementById('login-password').value;
+    const errEl = document.getElementById('auth-error');
+    errEl.style.display = 'none';
+    try { await signInWithEmailAndPassword(auth, email, pass); } 
+    catch (e) { errEl.textContent = 'உள்நுழைவு தோல்வி: ' + e.message; errEl.style.display = 'block'; }
+});
+document.getElementById('logout-btn').addEventListener('click', () => signOut(auth));
+
+onAuthStateChanged(auth, async user => {
+    if (!user) {
+        loginSection.classList.remove('hidden'); userInfoSection.classList.add('hidden');
+        filterContainer.style.display = 'none'; return;
+    }
+    currentUid = user.uid;
+    const emailDisplay = document.getElementById('user-email-display');
+    if (emailDisplay) emailDisplay.textContent = user.email;
+    
+    loginSection.classList.add('hidden'); userInfoSection.classList.remove('hidden');
+    
+    try { wrongQuestions = await loadWrongQuestions(currentUid); } catch (e) { wrongQuestions = {}; }
+    await showMainScoreBoard(); // மதிப்பெண் பலகையை லோட் செய்
+    
+    if (isLocked(wrongQuestions)) {
+        lockScreen.classList.remove('hidden');
+        document.getElementById('locked-count').textContent = Object.keys(wrongQuestions).filter(id => wrongQuestions[id].weightage >= 3).length;
+    } else {
+        lockScreen.classList.add('hidden');
+        loadQuestionBank();
+    }
+});
+
+// 🔥 Show Main Score Board (Old v18.3 Logic applied to Firebase)
+async function showMainScoreBoard() {
+    if (!currentUid) return;
+    let sessions = [];
+    try { sessions = await loadQuizSessions(currentUid); } catch (e) { console.error(e); }
+    
+    if (!sessions.length) {
+        document.getElementById('score-details').innerHTML = '<p>இதுவரை மதிப்பெண்கள் இல்லை</p>';
+        document.getElementById('average-score').textContent = '0';
+        document.getElementById('main-score-board').style.display = 'block';
+        return;
+    }
+    
+    let totalScore = 0, totalQ = 0, subj = {};
+    sessions.forEach(s => {
+        totalScore += s.correctCount || 0; totalQ += s.totalQuestions || 0;
+        (s.subjects || []).forEach(sub => {
+            if (!subj[sub.name]) subj[sub.name] = { s: 0, t: 0 };
+            subj[sub.name].s += sub.score; subj[sub.name].t += sub.total;
+        });
+    });
+    
+    const overallAvg = totalQ > 0 ? Math.round((totalScore / totalQ) * 100) : 0;
+    document.getElementById('average-score').textContent = overallAvg;
+    
+    let html = '';
+    for (const [name, data] of Object.entries(subj)) {
+        const avg = data.t > 0 ? Math.round((data.s / data.t) * 100) : 0;
+        html += `<div class="subject-score"><span>${name}:</span><span>${avg}% (${data.s}/${data.t})</span></div>`;
+    }
+    html += `<div class="subject-score"><span><b>தேர்வுகள்: ${sessions.length}</b></span><span><b>${overallAvg}% (${totalScore}/${totalQ})</b></span></div>`;
+    
+    document.getElementById('score-details').innerHTML = html;
+    document.getElementById('main-score-board').style.display = 'block';
+}
+
+// 🔥 Quiz Logic
+function startQuiz() {
     subjectWiseScores = {};
-    subjectWiseTotals = {};			
     questionOrder = Array.from({length: quizData.length}, (_, i) => i);
+    currentQuestionIndex = 0; score = 0; userAnswers = {}; sessionStartTime = Date.now();
+    scoreElement.textContent = '0'; totalQuestionsElement.textContent = quizData.length;
+    progressBar.style.width = '0%'; 
     
-    currentQuestionIndex = 0;
-    score = 0;
-    selectedOption = null;
-    userAnswers = {};
-    
-    scoreElement.textContent = score;
-    totalQuestionsElement.textContent = quizData.length;
-    progressBar.style.width = '0%';
-    
-    quizContent.style.display = 'block';
+    quizContent.style.display = 'block'; 
     endQuizElement.style.display = 'none';
-    
     displayQuestion();
 }
 
-// Display Question Image
-function displayQuestionImage() {
-    const questionIndex = questionOrder[currentQuestionIndex];
-    const question = quizData[questionIndex];
-    
-    if (question.image_path && question.image_path !== "") {
-        const baseImagePath = "./data/image/"; // Change this if your images are elsewhere
-        let fullImagePath = question.image_path;
-        if(!fullImagePath.startsWith('http') && !fullImagePath.startsWith('./') && !fullImagePath.startsWith('images/')){
-            fullImagePath = baseImagePath + question.image_path;
-        }
-        
-        imageElement.src = fullImagePath; 
-        imageElement.style.display = 'block';
-        imageElement.alt = "கேள்விக்குரிய படம்";
-        imageElement.onerror = function() { imageElement.style.display = 'none'; };
-    } else {
-        imageElement.style.display = 'none';
-    }
-}
-
-// Display Question
 function displayQuestion() {
-    const questionIndex = questionOrder[currentQuestionIndex];
-    const question = quizData[questionIndex];
+    const idx = questionOrder[currentQuestionIndex]; const q = quizData[idx];
+    questionElement.innerHTML = q.question;
+    if (q.image_path) {
+        const base = "./data/image/"; 
+        imageElement.src = q.image_path.startsWith('http') ? q.image_path : base + q.image_path;
+        imageElement.style.display = 'block';
+    } else imageElement.style.display = 'none';
     
-    questionElement.innerHTML = question.question;
-    displayQuestionImage();
-    
-    optionElements.forEach(option => {
-        const optionKey = option.getAttribute('data-option');
-        option.innerHTML = question.options[optionKey];
-        option.className = 'option tamil-font';
-        
-        if (userAnswers[questionIndex]) {
-            if (optionKey === question.key) {
-                option.classList.add('correct');
-            } else if (userAnswers[questionIndex].selected === optionKey && userAnswers[questionIndex].selected !== question.key) {
-                option.classList.add('incorrect');
-            }
-            if (userAnswers[questionIndex].selected === optionKey) {
-                option.classList.add('selected');
-            }                    
+    optionElements.forEach(opt => {
+        const k = opt.getAttribute('data-option'); opt.innerHTML = q.options[k]; opt.className = 'option tamil-font';
+        if (userAnswers[idx]) {
+            if (k === q.key) opt.classList.add('correct'); else if (userAnswers[idx].selected === k) opt.classList.add('incorrect');
         }
     });
-                                
+    
     prevButton.disabled = currentQuestionIndex === 0;
-    nextButton.disabled = currentQuestionIndex === quizData.length;
     nextButton.textContent = currentQuestionIndex === quizData.length - 1 ? 'முடிவு' : 'அடுத்த கேள்வி';
     progressBar.style.width = `${((currentQuestionIndex + 1) / quizData.length) * 100}%`;
+    feedbackElement.className = 'feedback'; feedbackElement.textContent = '';
     
-    feedbackElement.className = 'feedback';
-    feedbackElement.textContent = '';
-    startTimer();
-}
-
-// Timer
-function startTimer() {
     if (timerInterval) clearInterval(timerInterval);
-    timeLeft = 30;
-    timerElement.textContent = timeLeft;
-    timerContainer.classList.remove('timer-warning');
-    
+    timeLeft = 30; timerElement.textContent = timeLeft; timerContainer.classList.remove('timer-warning'); questionStartTime = Date.now();
     timerInterval = setInterval(() => {
-        timeLeft--;
-        timerElement.textContent = timeLeft;
+        timeLeft--; timerElement.textContent = timeLeft;
         if (timeLeft <= 10) timerContainer.classList.add('timer-warning');
-        if (timeLeft <= 0) {
-            clearInterval(timerInterval);
-            handleTimeUp();
-        }
+        if (timeLeft <= 0) { clearInterval(timerInterval); handleTimeUp(); }
     }, 1000);
 }
 
 function handleTimeUp() {
-    const questionIndex = questionOrder[currentQuestionIndex];
-    const question = quizData[questionIndex];
-    
-    if (!userAnswers[questionIndex]) {
-        userAnswers[questionIndex] = { selected: null, correct: false, score: 0 };
-        optionElements.forEach(option => {
-            if (option.getAttribute('data-option') === question.key) option.classList.add('correct');
-        });
-        feedbackElement.className = 'feedback incorrect';
-        feedbackElement.innerHTML = 'நேரம் முடிந்துவிட்டது! சரியான பதில்: ' + question.key;
+    const idx = questionOrder[currentQuestionIndex]; const q = quizData[idx];
+    if (!userAnswers[idx]) {
+        userAnswers[idx] = { selected: null, correct: false, timeMs: Date.now() - questionStartTime };
+        optionElements.forEach(o => { if (o.getAttribute('data-option') === q.key) o.classList.add('correct'); });
+        feedbackElement.className = 'feedback incorrect'; feedbackElement.innerHTML = 'நேரம் முடிந்தது! சரியான பதில்: ' + q.key;
+        recordWrongAnswer(q);
     }
     nextButton.disabled = false;
 }
 
-// Score Tracking
-function updateSubjectScore(subject, isCorrect) {
-    if (!subjectWiseScores[subject]) subjectWiseScores[subject] = { score: 0, total: 0 };
-    if (!subjectWiseTotals[subject]) subjectWiseTotals[subject] = 0;
-    subjectWiseScores[subject].total++;
-    subjectWiseTotals[subject]++;
-    if (isCorrect) subjectWiseScores[subject].score++;
-}
-
-// Check Answer
-function checkAnswer(selectedOptionKey) {
-    const questionIndex = questionOrder[currentQuestionIndex];
-    const question = quizData[questionIndex];
-    
-    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-    
-    const correctAnswer = question.key;
-    const isCorrect = selectedOptionKey === correctAnswer;
-    
-    userAnswers[questionIndex] = { selected: selectedOptionKey, correct: isCorrect, score: isCorrect ? 1 : 0 };
-    
-    if (isCorrect) score++;
-    scoreElement.textContent = score;
-    
-    feedbackElement.className = isCorrect ? 'feedback correct' : 'feedback incorrect';
-    feedbackElement.innerHTML = isCorrect ? 
-        'சரியான பதில்! <i class="fas fa-check-circle"></i>' : 
-        'தவறான பதில்! சரியான பதில்: ' + correctAnswer;
-    
-    optionElements.forEach(option => {
-        const optionKey = option.getAttribute('data-option');
-        if (optionKey === correctAnswer) option.classList.add('correct');
-        else if (optionKey === selectedOptionKey && !isCorrect) option.classList.add('incorrect');
-        if (optionKey === selectedOptionKey) option.classList.add('selected');
+optionElements.forEach(opt => {
+    opt.addEventListener('click', () => {
+        const idx = questionOrder[currentQuestionIndex]; if (userAnswers[idx]) return;
+        const q = quizData[idx]; if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+        const sel = opt.getAttribute('data-option'); const isCorrect = sel === q.key;
+        userAnswers[idx] = { selected: sel, correct: isCorrect, timeMs: Date.now() - questionStartTime };
+        
+        if (isCorrect) {
+            score++; scoreElement.textContent = score; opt.classList.add('correct');
+            feedbackElement.className = 'feedback correct'; feedbackElement.innerHTML = 'சரியான பதில்! <i class="fas fa-check-circle"></i>';
+            recordCorrectAnswer(q);
+        } else {
+            opt.classList.add('incorrect'); document.querySelector(`.option[data-option="${q.key}"]`).classList.add('correct');
+            feedbackElement.className = 'feedback incorrect'; feedbackElement.innerHTML = `தவறான பதில்! சரியான பதில்: ${q.key}`;
+            recordWrongAnswer(q);
+        }
+        
+        if (!subjectWiseScores[q.subject]) subjectWiseScores[q.subject] = { score: 0, total: 0 };
+        subjectWiseScores[q.subject].total++; if (isCorrect) subjectWiseScores[q.subject].score++;
+        nextButton.disabled = false;
     });
-    
-    updateSubjectScore(question.subject, isCorrect);
-    nextButton.disabled = false;
+});
+
+async function recordWrongAnswer(q) {
+    if (!q.id) return; const next = applyAnswer(wrongQuestions[q.id], false); wrongQuestions[q.id] = next;
+    await saveWrongQuestion(currentUid, q.id, { ...next, subject: q.subject, year: q.year, type: q.type, lastAttemptAt: new Date().toISOString() });
+}
+async function recordCorrectAnswer(q) {
+    if (!q.id || !wrongQuestions[q.id]) return; const next = applyAnswer(wrongQuestions[q.id], true); wrongQuestions[q.id] = next;
+    await saveWrongQuestion(currentUid, q.id, { ...next, subject: q.subject, year: q.year, type: q.type, lastAttemptAt: new Date().toISOString() });
 }
 
-// Navigation
-function nextQuestion() {
-    if (currentQuestionIndex < quizData.length - 1) {
-        currentQuestionIndex++;
-        selectedOption = null;
-        displayQuestion();
-    } else {
-        endQuiz();
-    }
-}
+function nextQuestion() { if (currentQuestionIndex < quizData.length - 1) { currentQuestionIndex++; displayQuestion(); } else endQuiz(); }
+function prevQuestion() { if (currentQuestionIndex > 0) { currentQuestionIndex--; displayQuestion(); } }
+nextButton.addEventListener('click', nextQuestion); prevButton.addEventListener('click', prevQuestion);
 
-function prevQuestion() {
-    if (currentQuestionIndex > 0) {
-        currentQuestionIndex--;
-        selectedOption = null;
-        displayQuestion();
-    }
-}
-
-// End Quiz
-function endQuiz() {
+// 🔥 End Quiz (Old v18.3 Logic applied correctly)
+async function endQuiz() {
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     
+    // பழையபடியே எல்லா எலிமெண்ட்ஸையும் மறைக்கவும், ஆனால் quizContent-ஐ மறைக்கக் கூடாது
     timerContainer.style.display = 'none';
     questionElement.style.display = 'none';
     imageElement.style.display = 'none';
@@ -669,96 +478,49 @@ function endQuiz() {
     finalScoreElement.textContent = score;
     finalTotalElement.textContent = quizData.length;
     
+    // நேரம் & கவனம் தேவை கணக்கீடு
+    const answered = Object.values(userAnswers);
+    const avgTime = answered.length ? (answered.reduce((s, a) => s + (a.timeMs || 0), 0) / answered.length / 1000).toFixed(1) : 0;
+    const attentionSpan = document.getElementById('avg-time');
+    if (attentionSpan) attentionSpan.textContent = avgTime;
+    
+    const wrongList = Object.entries(wrongQuestions).filter(([_, q]) => !isMastered(q) && q.weightage >= 2);
+    const attentionCount = document.getElementById('attention-count');
+    if (attentionCount) attentionCount.textContent = wrongList.length;
+
     let summaryHTML = '<h3>பாடம் வாரியான மதிப்பெண்:</h3>';
     for (const subject in subjectWiseScores) {
-        const subjectScore = subjectWiseScores[subject].score;
-        const subjectTotal = subjectWiseScores[subject].total;
-        const percentage = subjectTotal > 0 ? (subjectScore / subjectTotal * 100).toFixed(1) : 0;
-        summaryHTML += `
-            <div class="subject-score">
-                <span>${subject}:</span>
-                <span>${percentage}% (${subjectScore}/${subjectTotal})</span>
-            </div>
-        `;
+        const perc = (subjectWiseScores[subject].score / subjectWiseScores[subject].total * 100).toFixed(1);
+        summaryHTML += `<div class="subject-score"><span>${subject}:</span><span>${perc}% (${subjectWiseScores[subject].score}/${subjectWiseScores[subject].total})</span></div>`;
     }
     scoreSummaryElement.innerHTML = summaryHTML;
-    saveUserScores();
-}
 
-// Restart / Exit
-function restartQuiz() {
-    timerContainer.style.display = 'block';
-    questionElement.style.display = 'block';
-    document.querySelector('.options').style.display = 'grid';
-    feedbackElement.style.display = 'none';
-    prevButton.style.display = 'block';
-    nextButton.style.display = 'block';
-    document.querySelector('.progress').style.display = 'block';
-    document.querySelector('.score-container').style.display = 'block';
-    endQuizElement.style.display = 'none';
+    // Firebase Session Save
+    const sessionId = 'sess_' + Date.now();
+    try {
+        await saveQuizSession(currentUid, sessionId, {
+            date: new Date().toISOString().slice(0,10), totalQuestions: quizData.length, correctCount: score,
+            subjects: Object.entries(subjectWiseScores).map(([name, v]) => ({ name, score: v.score, total: v.total }))
+        });
+    } catch(e) {}
     
-    if (Object.keys(currentFilters).length > 0) applyFilters();
-    else startQuiz();
+    // மதிப்பெண் பலகையைப் புதுப்பிக்கவும்
+    await showMainScoreBoard();
 }
 
-function exitQuiz() {
-    if (timerInterval) clearInterval(timerInterval);
-    quizData = [];
-    currentQuestionIndex = 0;
-    score = 0;
-    selectedOption = null;
-    userAnswers = {};
-    
-    quizContent.style.display = 'none';
-    endQuizElement.style.display = 'none';
-    autoLoadQuestionBank();	
-}
-
-// Option Click Listeners
-optionElements.forEach(option => {
-    option.addEventListener('click', () => {
-        if (userAnswers[questionOrder[currentQuestionIndex]] !== undefined) return;
-        
-        optionElements.forEach(opt => opt.classList.remove('selected'));
-        option.classList.add('selected');
-        selectedOption = option.getAttribute('data-option');
-        
-        const question = quizData[questionOrder[currentQuestionIndex]];
-        const isCorrect = selectedOption === question.key;
-        
-        userAnswers[questionOrder[currentQuestionIndex]] = { selected: selectedOption, correct: isCorrect };
-        
-        if (isCorrect) {
-            score++;
-            scoreElement.textContent = score;
-            option.classList.add('correct');
-            feedbackElement.textContent = 'சரியான பதில்!';
-            feedbackElement.classList.add('correct');
-        } else {
-            option.classList.add('incorrect');
-            document.querySelector(`.option[data-option="${question.key}"]`).classList.add('correct');
-            feedbackElement.textContent = `தவறான பதில்! சரியான பதில்: ${question.key}`;
-            feedbackElement.classList.add('incorrect');
-        }
-        
-        updateSubjectScore(question.subject, isCorrect);
-        clearInterval(timerInterval);
-    });
+// Buttons
+restartButton.addEventListener('click', () => { 
+    endQuizElement.style.display = 'none'; 
+    quizContent.style.display = 'none'; 
+    filterContainer.style.display = 'block'; 
+    showMainScoreBoard();
+});
+exitButton.addEventListener('click', () => { 
+    endQuizElement.style.display = 'none'; 
+    quizContent.style.display = 'none'; 
+    filterContainer.style.display = 'block'; 
+    showMainScoreBoard();
 });
 
-// Button Listeners
-nextButton.addEventListener('click', nextQuestion);
-prevButton.addEventListener('click', prevQuestion);
-restartButton.addEventListener('click', restartQuiz);
-exitButton.addEventListener('click', exitQuiz);
-loginBtn.addEventListener('click', loginUser);
-logoutBtn.addEventListener('click', logoutUser);
 applyFiltersBtn.addEventListener('click', applyFilters);
 resetFiltersBtn.addEventListener('click', resetFilters);
-
-userNameInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') loginUser();
-});
-
-// Start App
-initApp();

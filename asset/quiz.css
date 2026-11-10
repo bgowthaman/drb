@@ -520,4 +520,14 @@
       width: auto;
       height: auto;
       
+
+      /* ===== v19.0 additions ===== */
+#login-email, #login-password { margin-bottom: 10px; display: block; margin-left: auto; margin-right: auto; }
+#auth-error { margin-top: 10px; font-size: 0.9rem; }
+.filter-options { flex-wrap: wrap; }
+.random-option { min-width: 160px; }
+.end-quiz p { margin: 6px 0; }
+#lock-screen h3 { margin-bottom: 12px; }
+.subject-score b { color: #2c3e50; }
+
     }
