@@ -1,4 +1,4 @@
-// Quiz v21.0 - Local-First Cloud-Sync (Offline Ready) + Bug Fixes
+// Quiz v21.1 - Local-First Cloud-Sync + UI Overlap Fix + Resume Quiz on Refresh
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, setPersistence, browserLocalPersistence,
          signInWithEmailAndPassword, signOut, onAuthStateChanged }
@@ -56,6 +56,7 @@ const injectWrongCheckbox = document.getElementById('inject-wrong-checkbox');
 const loginSection = document.getElementById('login-section');
 const userInfoSection = document.getElementById('user-info-section');
 const lockScreen = document.getElementById('lock-screen');
+const mainScoreBoard = document.getElementById('main-score-board');
 
 // State
 let currentUid = null;
@@ -87,6 +88,89 @@ const STAGE_CONFIG = {
     4: { maxStars: 2, mode: 'locked'     },
     5: { maxStars: 3, mode: 'locked'     }
 };
+
+// 🔥 UI Manager (எல்லா திரைகளையும் கட்டுப்படுத்த)
+function hideAllScreens() {
+    loginSection.classList.add('hidden');
+    userInfoSection.classList.add('hidden');
+    lockScreen.classList.add('hidden');
+    mainScoreBoard.style.display = 'none';
+    filterContainer.style.display = 'none';
+    quizContent.style.display = 'none';
+    endQuizElement.style.display = 'none';
+}
+
+function showLoginScreen() {
+    hideAllScreens();
+    loginSection.classList.remove('hidden');
+}
+
+function showFilterScreen() {
+    hideAllScreens();
+    userInfoSection.classList.remove('hidden');
+    mainScoreBoard.style.display = 'block';
+    filterContainer.style.display = 'block';
+}
+
+function showLockScreen() {
+    hideAllScreens();
+    userInfoSection.classList.remove('hidden');
+    lockScreen.classList.remove('hidden');
+    document.getElementById('locked-count').textContent = Object.keys(wrongQuestions).filter(id => wrongQuestions[id].weightage >= 3 && !isMastered(wrongQuestions[id])).length;
+}
+
+// 🔥 Active Quiz State (Refresh ஆனாலும் தேர்வு போகாமல் இருக்க)
+function saveActiveQuizState() {
+    if (!currentUid || quizData.length === 0) return;
+    const state = {
+        quizData, currentQuestionIndex, score, userAnswers, 
+        sessionStartTime, isRepairMode, questionOrder, subjectWiseScores
+    };
+    localStorage.setItem(`activeQuiz_${currentUid}`, JSON.stringify(state));
+}
+
+function clearActiveQuizState() {
+    if (currentUid) localStorage.removeItem(`activeQuiz_${currentUid}`);
+}
+
+function checkAndRestoreQuiz() {
+    const saved = localStorage.getItem(`activeQuiz_${currentUid}`);
+    if (saved) {
+        const state = JSON.parse(saved);
+        // ✅ இங்கே தான் confirm() கேட்கிறது
+        if (confirm("உங்கள் முந்தைய தேர்வு முடிக்கப்படவில்லை. அதைத் தொடரவா?")) {
+            quizData = state.quizData;
+            currentQuestionIndex = state.currentQuestionIndex;
+            score = state.score;
+            userAnswers = state.userAnswers;
+            sessionStartTime = state.sessionStartTime;
+            isRepairMode = state.isRepairMode;
+            questionOrder = state.questionOrder;
+            subjectWiseScores = state.subjectWiseScores || {};
+            
+            hideAllScreens();
+            userInfoSection.classList.remove('hidden');
+            quizContent.style.display = 'block'; 
+            timerContainer.style.display = 'block';
+            questionElement.style.display = 'block';
+            document.querySelector('.options').style.display = 'grid';
+            feedbackElement.style.display = 'block'; 
+            prevButton.style.display = 'block';
+            nextButton.style.display = 'block';
+            document.querySelector('.progress').style.display = 'block';
+            document.querySelector('.score-container').style.display = 'block';
+            
+            totalQuestionsElement.textContent = quizData.length;
+            scoreElement.textContent = score;
+            displayQuestion();
+            return true;
+        } else {
+            // 'Cancel' அழுத்தினால் தேர்வு நிலை அழிக்கப்படும்
+            clearActiveQuizState();
+        }
+    }
+    return false;
+}
 
 // 🔥 Device Detect & Register Functions
 async function detectDevice() {
@@ -126,7 +210,6 @@ async function detectDevice() {
 }
 
 async function registerDevice(uid) {
-    // Local-ல் சேமிக்கப்பட்ட சாதனத்தை முதலில் செக் செய்
     const localDevice = localStorage.getItem(`deviceInfo_${uid}`);
     if (localDevice) {
         currentDeviceInfo = JSON.parse(localDevice);
@@ -153,7 +236,6 @@ async function registerDevice(uid) {
                 lastUsed: new Date().toISOString()
             };
             
-            // Local + Cloud இரண்டிலும் சேமி
             localStorage.setItem(`deviceInfo_${uid}`, JSON.stringify(currentDeviceInfo));
             await setDoc(deviceRef, currentDeviceInfo);
         }
@@ -265,7 +347,6 @@ function processExcelData(data) {
 
     if (allQuestions.length > 0) {
         extractFilters(allQuestions);
-        showFilterOptions();
     }
 }
 
@@ -355,8 +436,6 @@ function loadSavedFilters() {
     }
 }
 
-function showFilterOptions() { filterContainer.style.display = 'block'; }
-
 // 🔥 Apply Filters
 function applyFilters() {
     const randomize = randomizeCheckbox.checked;
@@ -391,7 +470,8 @@ function applyFilters() {
     if (filtered.length === 0) { alert('கேள்விகள் இல்லை'); return; }
     quizData = filtered;
     if (randomize) quizData = quizData.sort(() => Math.random() - 0.5);
-    filterContainer.style.display = 'none';
+    hideAllScreens();
+    userInfoSection.classList.remove('hidden');
     startQuiz();
 }
 
@@ -408,7 +488,6 @@ function loadWQLocal(uid) { return JSON.parse(localStorage.getItem(`wq_${uid}`) 
 function saveSessionLocal(uid, session) {
     let sessions = loadSessionsLocal(uid);
     sessions.push(session);
-    // லோக்கல் ஸ்டோரேஜ் நிரம்பாமல் இருக்க கடைசி 500 தேர்வுகளை மட்டும் வைத்துக்கொள்ளவும்
     if (sessions.length > 500) sessions = sessions.slice(-500);
     localStorage.setItem(`sessions_${uid}`, JSON.stringify(sessions));
 }
@@ -432,43 +511,46 @@ document.getElementById('login-btn').addEventListener('click', async () => {
     try { await signInWithEmailAndPassword(auth, email, pass); } 
     catch (e) { errEl.textContent = 'உள்நுழைவு தோல்வி: ' + e.message; errEl.style.display = 'block'; }
 });
-document.getElementById('logout-btn').addEventListener('click', () => signOut(auth));
+
+// ✅ Logout செய்யும் போது தேர்வு நிலை (State) அழிக்கப்படாமல் சேமிக்கப்படும்
+document.getElementById('logout-btn').addEventListener('click', () => {
+    // clearActiveQuizState(); // ❌ இதை நீக்கிவிட்டோம், அதனால் தேர்வு நிலை அழியாது
+    signOut(auth);
+});
 
 onAuthStateChanged(auth, async user => {
     if (!user) {
-        loginSection.classList.remove('hidden'); userInfoSection.classList.add('hidden');
-        filterContainer.style.display = 'none'; return;
+        showLoginScreen();
+        return;
     }
+    
+    // லாகின் ஆனதும் மற்ற திரைகளை மறை
+    hideAllScreens(); 
+    userInfoSection.classList.remove('hidden');
     currentUid = user.uid;
+    
     const emailDisplay = document.getElementById('user-email-display');
     if (emailDisplay) emailDisplay.textContent = user.email;
     
-    loginSection.classList.add('hidden'); userInfoSection.classList.remove('hidden');
-    
-    // 1. Local-ல் இருந்து டேட்டாவை உடனே லோட் செய் (Fast UI)
+    // Local Data Load
     wrongQuestions = loadWQLocal(currentUid);
-    let localSessions = loadSessionsLocal(currentUid);
-    renderDashboard(localSessions); 
+    renderDashboard(loadSessionsLocal(currentUid)); 
     await registerDevice(currentUid);
-    await loadQuestionBank();
+    await loadQuestionBank(); // Excel லோட் செய்
 
-    // 2. Cloud-ல் இருந்து டேட்டாவை பின்னணியில் Sync செய் (Offline-ல் இது தோல்வியடையும், பிரச்சனை இல்லை)
+    // Cloud Sync
     try {
-        // Wrong Questions Sync
         const snapWQ = await getDocs(collection(db, 'users', currentUid, 'wrongQuestions'));
         let cloudWQ = {}; snapWQ.forEach(d => { cloudWQ[d.id] = d.data(); });
-        // Local மற்றும் Cloud-ஐ Merge செய் (Cloud-ல் இருக்கும் புதிய தகவல்களை Local-ல் சேமி)
         wrongQuestions = { ...wrongQuestions, ...cloudWQ };
         saveWQLocal(currentUid, wrongQuestions);
 
-        // Sessions Sync (Firebase Read Limit - Only last 100 for performance)
         const qSess = query(collection(db, 'users', currentUid, 'quizSessions'), orderBy('startTime', 'desc'), limit(100));
         const snapSess = await getDocs(qSess);
         let cloudSessions = []; snapSess.forEach(d => cloudSessions.push(d.data()));
         
-        // Merge & De-duplicate Sessions
         if (cloudSessions.length > 0) {
-            const allSessions = [...localSessions, ...cloudSessions];
+            const allSessions = [...loadSessionsLocal(currentUid), ...cloudSessions];
             const uniqueSessions = Array.from(new Map(allSessions.map(s => [s.sessionId, s])).values());
             uniqueSessions.sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
             
@@ -479,14 +561,17 @@ onAuthStateChanged(auth, async user => {
         console.warn("Offline Mode: Using Local Data only.", e);
     }
 
-    // Lock Screen Check
-    if (isLocked(wrongQuestions)) {
-        lockScreen.classList.remove('hidden');
-        document.getElementById('locked-count').textContent = Object.keys(wrongQuestions).filter(id => wrongQuestions[id].weightage >= 3 && !isMastered(wrongQuestions[id])).length;
-        filterContainer.style.display = 'none';
-        document.getElementById('main-score-board').style.display = 'none';
-    } else {
-        lockScreen.classList.add('hidden');
+    // ✅ திரை கட்டுப்பாடு & Refresh பிழை திருத்தம்
+    // 1. பழைய தேர்வு இருந்தால் Restore செய்
+    const isRestored = checkAndRestoreQuiz();
+
+    // 2. Restore ஆகவில்லை என்றால், லாக் உள்ளதா பார், இல்லைனா ஃபில்டர் காட்டு
+    if (!isRestored) {
+        if (isLocked(wrongQuestions)) {
+            showLockScreen();
+        } else {
+            showFilterScreen();
+        }
     }
 });
 
@@ -530,6 +615,7 @@ function renderDashboard(sessions) {
 
 // 🔥 Quiz Logic
 function startQuiz() {
+    clearActiveQuizState();
     subjectWiseScores = {};
     questionOrder = Array.from({length: quizData.length}, (_, i) => i);
     currentQuestionIndex = 0; score = 0; userAnswers = {}; sessionStartTime = Date.now();
@@ -543,7 +629,7 @@ function startQuiz() {
     feedbackElement.style.display = 'block'; 
     prevButton.style.display = 'block';
     nextButton.style.display = 'block';
-    nextButton.disabled = false; // Reset button state
+    nextButton.disabled = false; 
     document.querySelector('.progress').style.display = 'block';
     document.querySelector('.score-container').style.display = 'block';
     
@@ -579,9 +665,10 @@ function displayQuestion() {
         if (timeLeft <= 10) timerContainer.classList.add('timer-warning');
         if (timeLeft <= 0) { clearInterval(timerInterval); handleTimeUp(); }
     }, 1000);
+    
+    saveActiveQuizState(); // ✅ புதிய கேள்விக்குச் செல்லும் போது State சேமி
 }
 
-// ✅ பிழை திருத்தம்: கடைசி கேள்விக்கு நேரம் முடிந்தால் தானாக முடிவுப் பக்கம் செல்லும்
 function handleTimeUp() {
     const idx = questionOrder[currentQuestionIndex]; const q = quizData[idx];
     if (!userAnswers[idx]) {
@@ -595,10 +682,11 @@ function handleTimeUp() {
     }
     
     if (currentQuestionIndex === quizData.length - 1) {
-        setTimeout(endQuiz, 1500); // 1.5 வினாடிகள் கழித்து தானாக முடியும்
+        setTimeout(endQuiz, 1500); 
     } else {
         nextButton.disabled = false;
     }
+    saveActiveQuizState();
 }
 
 optionElements.forEach(opt => {
@@ -621,18 +709,18 @@ optionElements.forEach(opt => {
         if (!subjectWiseScores[q.subject]) subjectWiseScores[q.subject] = { score: 0, total: 0 };
         subjectWiseScores[q.subject].total++; if (isCorrect) subjectWiseScores[q.subject].score++;
         nextButton.disabled = false;
+        saveActiveQuizState(); // ✅ பதிலளித்த பிறகு State சேமி
     });
 });
 
-// ✅ Local First Save, Then Cloud Sync
 async function recordWrongAnswer(q) {
     if (!q.id) return; 
     const next = applyAnswer(wrongQuestions[q.id], false); 
     wrongQuestions[q.id] = next;
     const data = { ...next, subject: q.subject, year: q.year, type: q.type, lastAttemptAt: new Date().toISOString() };
     
-    saveWQLocal(currentUid, wrongQuestions); // Save Local
-    await syncWQToCloud(currentUid, q.id, data); // Sync Cloud
+    saveWQLocal(currentUid, wrongQuestions);
+    await syncWQToCloud(currentUid, q.id, data);
 }
 
 async function recordCorrectAnswer(q) {
@@ -641,13 +729,12 @@ async function recordCorrectAnswer(q) {
     wrongQuestions[q.id] = next;
     const data = { ...next, subject: q.subject, year: q.year, type: q.type, lastAttemptAt: new Date().toISOString() };
     
-    saveWQLocal(currentUid, wrongQuestions); // Save Local
-    await syncWQToCloud(currentUid, q.id, data); // Sync Cloud
+    saveWQLocal(currentUid, wrongQuestions);
+    await syncWQToCloud(currentUid, q.id, data);
 }
 
-// ✅ பிழை திருத்தம்: அடுத்த கேள்வி பொத்தானை வேகமாக அழுத்துவதைத் தடுக்க
 function nextQuestion() { 
-    nextButton.disabled = true; // உடனடியாக முடக்கு
+    nextButton.disabled = true;
     if (currentQuestionIndex < quizData.length - 1) { 
         currentQuestionIndex++; 
         displayQuestion(); 
@@ -669,6 +756,7 @@ prevButton.addEventListener('click', prevQuestion);
 // 🔥 End Quiz (Local Save + Cloud Sync)
 async function endQuiz() {
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    clearActiveQuizState(); // ✅ தேர்வு முடிந்ததும் State நீக்கு
     
     const endTime = Date.now();
     const totalTimeMs = endTime - sessionStartTime;
@@ -705,85 +793,46 @@ async function endQuiz() {
 
     const sessionData = {
         sessionId: 'sess_' + Date.now(),
-        device: {
-            autoName: currentDeviceInfo.autoName || "Unknown",
-            customName: currentDeviceInfo.customName || "Unknown"
-        },
+        device: { autoName: currentDeviceInfo.autoName || "Unknown", customName: currentDeviceInfo.customName || "Unknown" },
         date: new Date().toISOString().slice(0,10), 
         startTime: new Date(sessionStartTime).toISOString(),
         endTime: new Date(endTime).toISOString(),
-        totalTimeMs: totalTimeMs,
-        isRepairMode: isRepairMode,
-        totalQuestions: quizData.length, 
-        correctCount: score,
+        totalTimeMs: totalTimeMs, isRepairMode: isRepairMode,
+        totalQuestions: quizData.length, correctCount: score,
         answers: quizData.map((q, i) => ({
-            questionId: q.id, 
-            selected: userAnswers[i]?.selected || null,
-            correct: userAnswers[i]?.correct || false, 
-            timeMs: userAnswers[i]?.timeMs || 0
+            questionId: q.id, selected: userAnswers[i]?.selected || null,
+            correct: userAnswers[i]?.correct || false, timeMs: userAnswers[i]?.timeMs || 0
         })),
         subjects: Object.entries(subjectWiseScores).map(([name, v]) => ({ name, score: v.score, total: v.total }))
     };
 
-    // 1. Save to Local Storage Instantly
     saveSessionLocal(currentUid, sessionData);
-    
-    // 2. Render Dashboard with New Local Data
     renderDashboard(loadSessionsLocal(currentUid));
-
-    // 3. Sync to Cloud (Background)
     await syncSessionToCloud(currentUid, sessionData.sessionId, sessionData);
-    console.log("Session saved locally & synced to cloud!");
 
-    // லாக் அமைப்பு சரிபார்ப்பு
     if (isLocked(wrongQuestions)) {
-        setTimeout(() => {
-            endQuizElement.style.display = 'none';
-            quizContent.style.display = 'none';
-            lockScreen.classList.remove('hidden');
-            filterContainer.style.display = 'none';
-            document.getElementById('main-score-board').style.display = 'none';
-            document.getElementById('locked-count').textContent = Object.keys(wrongQuestions).filter(id => wrongQuestions[id].weightage >= 3 && !isMastered(wrongQuestions[id])).length;
-        }, 3000);
+        setTimeout(() => { showLockScreen(); }, 3000);
     }
 }
 
 // Buttons
-restartButton.addEventListener('click', () => { 
-    endQuizElement.style.display = 'none'; 
-    quizContent.style.display = 'none'; 
-    filterContainer.style.display = 'block'; 
-});
-exitButton.addEventListener('click', () => { 
-    endQuizElement.style.display = 'none'; 
-    quizContent.style.display = 'none'; 
-    filterContainer.style.display = 'block'; 
-});
+restartButton.addEventListener('click', () => { showFilterScreen(); });
+exitButton.addEventListener('click', () => { showFilterScreen(); });
 
 // 🔥 பழுதுபார்ப்பு தேர்வு பொத்தான்
 document.getElementById('repair-btn').addEventListener('click', () => {
     const lockedIds = new Set(Object.entries(wrongQuestions)
         .filter(([_, q]) => q.weightage >= 3 && !isMastered(q)).map(([id]) => id));
     
-    if (allQuestions.length === 0) {
-        alert('கேள்விகள் இன்னும் லோட் ஆகவில்லை. சிறிது நேரம் கழித்து முயற்சிக்கவும்.');
-        return;
-    }
+    if (allQuestions.length === 0) { alert('கேள்விகள் இன்னும் லோட் ஆகவில்லை.'); return; }
 
     const repairQs = allQuestions.filter(q => lockedIds.has(q.id));
-    
-    if (!repairQs.length) { 
-        alert('பழுதுபார்ப்பு கேள்விகள் இல்லை'); 
-        return; 
-    }
+    if (!repairQs.length) { alert('பழுதுபார்ப்பு கேள்விகள் இல்லை'); return; }
     
     isRepairMode = true;
     quizData = repairQs;
-    
-    lockScreen.classList.add('hidden');
-    document.getElementById('main-score-board').style.display = 'none';
-    filterContainer.style.display = 'none';
-    
+    hideAllScreens();
+    userInfoSection.classList.remove('hidden');
     startQuiz(); 
 });
 
