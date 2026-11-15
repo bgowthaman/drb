@@ -436,6 +436,36 @@ function loadSavedFilters() {
     }
 }
 
+// 🔥 Options-ஐ கலைக்கும் (Shuffle) புதிய ஃபங்ஷன்
+function shuffleOptions(questions) {
+    return questions.map(q => {
+        if (!q.options || !q.key) return q;
+        
+        // ஒவ்வொரு விருப்பத்தையும் அதன் சரியான விடையுடன் இணைக்கவும்
+        let optObjs = [
+            { text: q.options.A, isCorrect: q.key === 'A' },
+            { text: q.options.B, isCorrect: q.key === 'B' },
+            { text: q.options.C, isCorrect: q.key === 'C' },
+            { text: q.options.D, isCorrect: q.key === 'D' }
+        ];
+        
+        // விருப்பங்களைக் கலைக்கவும் (Randomize)
+        optObjs.sort(() => Math.random() - 0.5);
+        
+        let newOptions = {};
+        let newKey = 'A';
+        
+        // புதிய வரிசைப்படி A, B, C, D என மீண்டும் ஒதுக்கவும்
+        optObjs.forEach((obj, i) => {
+            const letter = String.fromCharCode(65 + i); // 65 என்பது 'A'
+            newOptions[letter] = obj.text;
+            if (obj.isCorrect) newKey = letter; // புதிய சரியான விடை எழுத்து
+        });
+        
+        return { ...q, options: newOptions, key: newKey };
+    });
+}
+
 // 🔥 Apply Filters
 function applyFilters() {
     const randomize = randomizeCheckbox.checked;
@@ -470,6 +500,18 @@ function applyFilters() {
     if (filtered.length === 0) { alert('கேள்விகள் இல்லை'); return; }
     quizData = filtered;
     if (randomize) quizData = quizData.sort(() => Math.random() - 0.5);
+    hideAllScreens();
+    userInfoSection.classList.remove('hidden');
+    startQuiz();
+
+    if (filtered.length === 0) { alert('கேள்விகள் இல்லை'); return; }
+    quizData = filtered;
+    
+    if (randomize) {
+        quizData = quizData.sort(() => Math.random() - 0.5); // கேள்விகளைக் கலை
+        quizData = shuffleOptions(quizData); // ✅ விருப்பங்களையும் கலை
+    }
+    
     hideAllScreens();
     userInfoSection.classList.remove('hidden');
     startQuiz();
@@ -830,7 +872,8 @@ document.getElementById('repair-btn').addEventListener('click', () => {
     if (!repairQs.length) { alert('பழுதுபார்ப்பு கேள்விகள் இல்லை'); return; }
     
     isRepairMode = true;
-    quizData = repairQs;
+    quizData = shuffleOptions(repairQs); // ✅ இங்கேயும் விருப்பங்களைக் கலைக்கவும்
+    
     hideAllScreens();
     userInfoSection.classList.remove('hidden');
     startQuiz(); 
