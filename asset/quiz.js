@@ -680,35 +680,73 @@ function startQuiz() {
 }
 
 function displayQuestion() {
-    const idx = questionOrder[currentQuestionIndex]; const q = quizData[idx];
+    const idx = questionOrder[currentQuestionIndex]; 
+    const q = quizData[idx];
+    
     questionElement.innerHTML = q.question;
+    
     if (q.image_path) {
         const base = "./data/image/"; 
         imageElement.src = q.image_path.startsWith('http') ? q.image_path : base + q.image_path;
         imageElement.style.display = 'block';
-    } else imageElement.style.display = 'none';
+    } else {
+        imageElement.style.display = 'none';
+    }
     
     optionElements.forEach(opt => {
-        const k = opt.getAttribute('data-option'); opt.innerHTML = q.options[k]; opt.className = 'option tamil-font';
+        const k = opt.getAttribute('data-option'); 
+        opt.innerHTML = q.options[k]; 
+        opt.className = 'option tamil-font';
+        
+        // ஏற்கனவே பதிலளித்திருந்தால், சரி/தவறு வண்ணங்களைக் காட்டு
         if (userAnswers[idx]) {
-            if (k === q.key) opt.classList.add('correct'); else if (userAnswers[idx].selected === k) opt.classList.add('incorrect');
+            if (k === q.key) opt.classList.add('correct'); 
+            else if (userAnswers[idx].selected === k) opt.classList.add('incorrect');
         }
     });
     
     prevButton.disabled = currentQuestionIndex === 0;
     nextButton.textContent = currentQuestionIndex === quizData.length - 1 ? 'முடிவு' : 'அடுத்த கேள்வி';
     progressBar.style.width = `${((currentQuestionIndex + 1) / quizData.length) * 100}%`;
-    feedbackElement.className = 'feedback'; feedbackElement.textContent = '';
     
-    if (timerInterval) clearInterval(timerInterval);
-    timeLeft = 30; timerElement.textContent = timeLeft; timerContainer.classList.remove('timer-warning'); questionStartTime = Date.now();
-    timerInterval = setInterval(() => {
-        timeLeft--; timerElement.textContent = timeLeft;
-        if (timeLeft <= 10) timerContainer.classList.add('timer-warning');
-        if (timeLeft <= 0) { clearInterval(timerInterval); handleTimeUp(); }
-    }, 1000);
+    // ✅ புதிய பிழை திருத்தம் இங்கே
+    if (userAnswers[idx]) {
+        // 1. ஏற்கனவே பதிலளித்த கேள்வி (பின்னால் வரும்போது)
+        if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+        timerContainer.style.display = 'none'; // டைமரை மறைக்கவும்
+        nextButton.disabled = false;           // Next பொத்தானை உடனே இயக்கவும்
+        
+        // முந்தைய பதிலின் ஃபீட்பேக்கைக் காட்டு
+        feedbackElement.className = userAnswers[idx].correct ? 'feedback correct' : 'feedback incorrect';
+        feedbackElement.innerHTML = userAnswers[idx].correct ? 
+            'சரியான பதில்! <i class="fas fa-check-circle"></i>' : 
+            `தவறான பதில்! சரியான பதில்: ${q.key}`;
+            
+    } else {
+        // 2. புதிய கேள்வி (முதல் முறையாக வரும்போது)
+        timerContainer.style.display = 'block';
+        feedbackElement.className = 'feedback'; 
+        feedbackElement.textContent = '';
+        nextButton.disabled = true; // பதிலளிக்கும் வரை Next முடக்கப்பட்டிருக்கும்
+        
+        if (timerInterval) clearInterval(timerInterval);
+        timeLeft = 30; 
+        timerElement.textContent = timeLeft; 
+        timerContainer.classList.remove('timer-warning'); 
+        questionStartTime = Date.now();
+        
+        timerInterval = setInterval(() => {
+            timeLeft--; 
+            timerElement.textContent = timeLeft;
+            if (timeLeft <= 10) timerContainer.classList.add('timer-warning');
+            if (timeLeft <= 0) { 
+                clearInterval(timerInterval); 
+                handleTimeUp(); 
+            }
+        }, 1000);
+    }
     
-    saveActiveQuizState(); // ✅ புதிய கேள்விக்குச் செல்லும் போது State சேமி
+    saveActiveQuizState(); // தேர்வு நிலையைச் சேமி
 }
 
 function handleTimeUp() {
