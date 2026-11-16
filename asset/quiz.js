@@ -209,40 +209,197 @@ async function detectDevice() {
     return `${deviceStr} - ${browser}`;
 }
 
-async function registerDevice(uid) {
-    const localDevice = localStorage.getItem(`deviceInfo_${uid}`);
-    if (localDevice) {
-        currentDeviceInfo = JSON.parse(localDevice);
-        return;
-    }
+// 🔥 1. Custom Dialog UI Controller
+function showDeviceDialog(autoName, devices) {
+    return new Promise((resolve) => {
+        const dialog = document.getElementById('device-dialog');
+        const step1 = document.getElementById('device-step-1');
+        const step2 = document.getElementById('device-step-2');
+        const step3 = document.getElementById('device-step-3');
+        const title = document.getElementById('device-dialog-title');
+        const selectedDisplay = document.getElementById('dialog-selected-display');
+        const selectedNameSpan = document.getElementById('selected-device-name');
+        
+        document.getElementById('dialog-auto-name').textContent = autoName;
+        document.getElementById('dialog-device-input').value = "";
+        document.getElementById('dialog-device-list').innerHTML = "";
+        selectedDisplay.style.display = 'none';
+        
+        let selectedDevice = null;
 
+        // Reset steps
+        step1.style.display = 'block';
+        step2.style.display = 'none';
+        step3.style.display = 'none';
+        title.textContent = "புதிய சாதனமா?";
+        dialog.style.display = 'flex';
+
+        // Cleanup old listeners
+        const btnYes = document.getElementById('dialog-btn-yes');
+        const btnNo = document.getElementById('dialog-btn-no');
+        const btnSave = document.getElementById('dialog-btn-save');
+        const btnBack1 = document.getElementById('dialog-btn-back-1');
+        const btnBack2 = document.getElementById('dialog-btn-back-2');
+        const btnConfirm = document.getElementById('dialog-btn-confirm');
+        
+        btnYes.replaceWith(btnYes.cloneNode(true));
+        btnNo.replaceWith(btnNo.cloneNode(true));
+        btnSave.replaceWith(btnSave.cloneNode(true));
+        btnBack1.replaceWith(btnBack1.cloneNode(true));
+        btnBack2.replaceWith(btnBack2.cloneNode(true));
+        btnConfirm.replaceWith(btnConfirm.cloneNode(true));
+
+        const newConfirmBtn = document.getElementById('dialog-btn-confirm');
+
+        // 1. Yes Button
+        document.getElementById('dialog-btn-yes').addEventListener('click', () => {
+            step1.style.display = 'none';
+            step2.style.display = 'block';
+            title.textContent = "புதிய சாதனத்தின் பெயர்:";
+            document.getElementById('dialog-device-input').focus();
+        });
+
+        // 2. No Button (Show List)
+        document.getElementById('dialog-btn-no').addEventListener('click', () => {
+            step1.style.display = 'none';
+            step3.style.display = 'block';
+            title.textContent = "உங்கள் சாதனத்தைத் தேர்ந்தெடுக்கவும்:";
+            
+            const listDiv = document.getElementById('dialog-device-list');
+            
+            // ✅ புதிய பிழை திருத்தம்: பட்டியலை முதலில் காலி செய் (Duplicate-ஐ தடுக்க)
+            listDiv.innerHTML = ""; 
+            
+            devices.forEach((d) => {
+                const btn = document.createElement('button');
+                btn.className = 'filter-btn';
+                btn.style.width = '100%';
+                btn.style.marginBottom = '5px';
+                btn.textContent = `${d.customName} (${d.autoName})`;
+                
+                btn.onclick = () => {
+                    listDiv.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+                    btn.classList.add('selected');
+                    
+                    selectedDevice = d;
+                    selectedDisplay.style.display = 'block';
+                    selectedNameSpan.textContent = `${d.customName} (${d.autoName})`;
+                    newConfirmBtn.disabled = false;
+                    newConfirmBtn.style.backgroundColor = '#40c057';
+                    newConfirmBtn.style.cursor = 'pointer';
+                };
+                listDiv.appendChild(btn);
+            });
+        });
+
+        // 3. Save New Device (Confirm)
+        document.getElementById('dialog-btn-save').addEventListener('click', () => {
+            const customName = document.getElementById('dialog-device-input').value.trim();
+            if (!customName) { alert("தயவுசெய்து ஒரு பெயரை உள்ளிடவும்"); return; }
+            dialog.style.display = 'none';
+            resolve({ isNew: true, customName: customName, autoName: autoName });
+        });
+
+        // 4. Confirm Existing Device
+        newConfirmBtn.addEventListener('click', () => {
+            if (!selectedDevice) return;
+            dialog.style.display = 'none';
+            resolve({ isNew: false, device: selectedDevice });
+        });
+
+        // 5. Back Buttons
+        document.getElementById('dialog-btn-back-1').addEventListener('click', () => {
+            step2.style.display = 'none';
+            step1.style.display = 'block';
+            title.textContent = "புதிய சாதனமா?";
+        });
+
+        document.getElementById('dialog-btn-back-2').addEventListener('click', () => {
+            step3.style.display = 'none';
+            step1.style.display = 'block';
+            title.textContent = "புதிய சாதனமா?";
+            selectedDevice = null;
+            newConfirmBtn.disabled = true;
+            newConfirmBtn.style.backgroundColor = '#ced4da';
+            newConfirmBtn.style.cursor = 'not-allowed';
+            selectedDisplay.style.display = 'none';
+        });
+    });
+}
+
+// 🔥 2. Device Register Logic (Using the Dialog)
+async function registerDevice(uid) {
+    const localData = localStorage.getItem(`deviceInfo_${uid}`);
     const autoName = await detectDevice();
     const deviceId = autoName.replace(/[^a-zA-Z0-9]/g, '_'); 
     
     try {
         const deviceRef = doc(db, 'users', uid, 'devices', deviceId);
         const docSnap = await getDoc(deviceRef);
-        
-        if (docSnap.exists()) {
-            currentDeviceInfo = docSnap.data();
+        const devicesColl = collection(db, 'users', uid, 'devices');
+        const allDevicesSnap = await getDocs(devicesColl);
+
+        if (localData) {
+            currentDeviceInfo = JSON.parse(localData);
+            currentDeviceInfo.lastUsed = new Date().toISOString();
             localStorage.setItem(`deviceInfo_${uid}`, JSON.stringify(currentDeviceInfo));
-        } else {
-            let customName = prompt(`புதிய சாதனம் கண்டறியப்பட்டது: ${autoName}\n\nஇந்த சாதனத்திற்கு ஒரு பெயர் கொடுங்கள் (உ.ம்: "என் மொபைல்", "ஆபீஸ் லேப்டாப்"):`);
-            if (!customName || customName.trim() === "") customName = autoName;
-            
-            currentDeviceInfo = {
-                autoName: autoName,
-                customName: customName.trim(),
-                lastUsed: new Date().toISOString()
-            };
-            
-            localStorage.setItem(`deviceInfo_${uid}`, JSON.stringify(currentDeviceInfo));
-            await setDoc(deviceRef, currentDeviceInfo);
+            setDoc(deviceRef, { lastUsed: currentDeviceInfo.lastUsed }, { merge: true }).catch(e => console.warn(e));
+            return;
         }
-    } catch (e) {
-        console.error("Device register error (Offline):", e);
-        currentDeviceInfo = { autoName: autoName, customName: autoName };
+
+        if (!allDevicesSnap.empty) {
+            // OS Filter
+            const currentOS = autoName.split(' - ')[0]; 
+            let deviceList = [];
+            let seenNames = new Set(); 
+
+            allDevicesSnap.forEach(d => {
+                const data = d.data();
+                if (data.autoName && data.autoName.includes(currentOS)) {
+                    const uniqueName = `${data.customName} (${data.autoName})`;
+                    if (!seenNames.has(uniqueName)) {
+                        seenNames.add(uniqueName);
+                        deviceList.push({ id: d.id, ...data });
+                    }
+                }
+            });
+
+            if (deviceList.length > 0) {
+                // Show Custom Dialog and Wait for User Choice
+                const result = await showDeviceDialog(autoName, deviceList);
+                
+                if (result.isNew) {
+                    const newDeviceId = `${deviceId}_${Date.now()}`; 
+                    currentDeviceInfo = { autoName: result.autoName, customName: result.customName, lastUsed: new Date().toISOString() };
+                    localStorage.setItem(`deviceInfo_${uid}`, JSON.stringify(currentDeviceInfo));
+                    await setDoc(doc(db, 'users', uid, 'devices', newDeviceId), currentDeviceInfo);
+                } else {
+                    currentDeviceInfo = result.device;
+                    currentDeviceInfo.lastUsed = new Date().toISOString();
+                    localStorage.setItem(`deviceInfo_${uid}`, JSON.stringify(currentDeviceInfo));
+                    await setDoc(doc(db, 'users', uid, 'devices', currentDeviceInfo.id), { lastUsed: currentDeviceInfo.lastUsed }, { merge: true });
+                }
+                return;
+            }
+        }
+
+        // Local காலி, Firebase-லும் (அந்த OS-க்கு) இல்லை
+        const result = await showDeviceDialog(autoName, []);
+        const newDeviceId = `${deviceId}_${Date.now()}`; 
+        currentDeviceInfo = { autoName: result.autoName, customName: result.customName, lastUsed: new Date().toISOString() };
         localStorage.setItem(`deviceInfo_${uid}`, JSON.stringify(currentDeviceInfo));
+        await setDoc(doc(db, 'users', uid, 'devices', newDeviceId), currentDeviceInfo);
+
+    } catch (e) {
+        console.error("Device error:", e);
+        // Fallback to offline mode
+        if (localData) {
+            currentDeviceInfo = JSON.parse(localData);
+        } else {
+            const customName = autoName;
+            currentDeviceInfo = { autoName: autoName, customName: customName, lastUsed: new Date().toISOString() };
+            localStorage.setItem(`deviceInfo_${uid}`, JSON.stringify(currentDeviceInfo));
+        }
     }
 }
 
@@ -498,15 +655,8 @@ function applyFilters() {
     injected.forEach(q => { if (!seen.has(q.id)) { filtered.push(q); seen.add(q.id); } });
 
     if (filtered.length === 0) { alert('கேள்விகள் இல்லை'); return; }
-    quizData = filtered;
-    if (randomize) quizData = quizData.sort(() => Math.random() - 0.5);
-    hideAllScreens();
-    userInfoSection.classList.remove('hidden');
-    startQuiz();
-
-    if (filtered.length === 0) { alert('கேள்விகள் இல்லை'); return; }
-    quizData = filtered;
     
+    quizData = filtered;
     if (randomize) {
         quizData = quizData.sort(() => Math.random() - 0.5); // கேள்விகளைக் கலை
         quizData = shuffleOptions(quizData); // ✅ விருப்பங்களையும் கலை

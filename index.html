@@ -13,6 +13,43 @@
 <div class="container">
     <h1 class="tamil-font">DRB/SRB Quiz</h1>
 
+    <!-- Device Selection Dialog -->
+    <div id="device-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
+        <div style="background:white; padding:20px; border-radius:10px; width:90%; max-width:400px; text-align:center; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+            <h3 id="device-dialog-title" class="tamil-font" style="margin-bottom:15px; color:#2c3e50;">புதிய சாதனமா?</h3>
+            
+            <!-- Yes/No Buttons -->
+            <div id="device-step-1">
+                <p class="tamil-font" style="margin-bottom:20px; font-size:14px;">உங்கள் சாதனம்: <span id="dialog-auto-name" style="font-weight:bold; color:#2989d8;"></span></p>
+                <button id="dialog-btn-yes" class="start-btn" style="margin-right:10px;">ஆம் (புதியது)</button>
+                <button id="dialog-btn-no" class="reset-btn">இல்லை (பழையது)</button>
+            </div>
+
+            <!-- Input for New Device -->
+            <div id="device-step-2" style="display:none;">
+                <input type="text" id="dialog-device-input" class="user-input" placeholder="உ.ம்: Office PC" style="width:100%; margin-bottom:15px;">
+                <div style="display: flex; justify-content: center; gap: 10px;">
+                    <button id="dialog-btn-back-1" class="reset-btn">பின்னால்</button>
+                    <button id="dialog-btn-save" class="start-btn">உறுதி செய்</button>
+                </div>
+            </div>
+
+            <!-- List of Existing Devices -->
+            <div id="device-step-3" style="display:none;">
+                <!-- Selected device display -->
+                <div id="dialog-selected-display" class="tamil-font" style="margin-bottom: 10px; padding: 10px; background: #e9ecef; border-radius: 5px; display: none;">
+                    தேர்ந்தெடுக்கப்பட்டது: <span id="selected-device-name" style="font-weight: bold; color: #2c3e50;"></span>
+                </div>
+
+                <div id="dialog-device-list" style="max-height: 200px; overflow-y: auto; text-align: left; margin-bottom: 15px; border: 1px solid #ddd; padding: 10px; border-radius: 5px;"></div>
+                <div style="display: flex; justify-content: center; gap: 10px;">
+                    <button id="dialog-btn-back-2" class="reset-btn">பின்னால்</button>
+                    <button id="dialog-btn-confirm" class="start-btn" disabled style="background-color: #ced4da; cursor: not-allowed;">உறுதி செய்</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ===== LOGIN ===== -->
     <div class="user-container tamil-font" id="user-container">
         <div id="login-section">
